@@ -178,14 +178,14 @@
     const reader = new FileReader();
     reader.onload = (e) => {
       img.onload = () => {
-        const size = 160;
+        const size = 320;
         const canvas = document.createElement('canvas');
         canvas.width = size; canvas.height = size;
         const ctx = canvas.getContext('2d');
         const scale = Math.max(size / img.width, size / img.height);
         const w = img.width * scale, h = img.height * scale;
         ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        photoDataUrl = canvas.toDataURL('image/jpeg', 0.9);
         photoPreview.innerHTML = `<img src="${photoDataUrl}" alt="">`;
       };
       img.src = e.target.result;
