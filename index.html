@@ -311,7 +311,323 @@
   passwordInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryUnlock(); });
 
   updateReadonlyBtn();
+
+  // ================= 專卷資料產生器 =================
+  const directoryView = document.getElementById('directory-view');
+  const generatorView = document.getElementById('generator-view');
+  const genEntryBtn = document.getElementById('gen-entry-btn');
+  const genBackBtn = document.getElementById('gen-back-btn');
+  const genTitleInput = document.getElementById('gen-title-input');
+  const genSearchInput = document.getElementById('gen-search-input');
+  const genResultsEl = document.getElementById('gen-results');
+  const genSelectedEl = document.getElementById('gen-selected-list');
+  const genGenerateBtn = document.getElementById('gen-generate-btn');
+  const genLineupBtn = document.getElementById('gen-lineup-btn');
+
+  let selectedOfficers = []; // [{ order, record }]
+
+  genEntryBtn.addEventListener('click', () => {
+    directoryView.style.display = 'none';
+    generatorView.style.display = 'block';
+    genSearchInput.value = '';
+    renderGenResults();
+  });
+  genBackBtn.addEventListener('click', () => {
+    generatorView.style.display = 'none';
+    directoryView.style.display = 'block';
+  });
+
+  function getGenFiltered() {
+    const kw = genSearchInput.value.trim().toLowerCase();
+    if (!kw) return [];
+    return allRecords.filter(r => {
+      const hay = [r.companyZh, r.companyEn, r.nameZh, r.nameEn, r.titleZh, r.titleEn]
+        .filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(kw);
+    });
+  }
+
+  function renderGenResults() {
+    const filtered = getGenFiltered();
+    genResultsEl.innerHTML = '';
+    if (filtered.length === 0) {
+      const msg = genSearchInput.value.trim() ? '找不到符合的資料' : '輸入關鍵字搜尋要加入的貴賓';
+      genResultsEl.innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-sub">${msg}</div></div>`;
+    } else {
+      filtered.forEach(r => genResultsEl.appendChild(buildGenRow(r)));
+    }
+    renderGenSelectedList();
+  }
+
+  function buildGenRow(r) {
+    const row = document.createElement('div');
+    row.className = "card-row";
+    const idx = selectedOfficers.findIndex(s => s.record.id === r.id);
+    const line2 = [r.nameZh, r.titleZh].filter(Boolean).join('　');
+    row.innerHTML = `
+      <div class="avatar">
+        ${r.photo ? `<img src="${r.photo}" alt="">` : `<span>${esc((r.nameZh || r.companyZh || '?')[0])}</span>`}
+      </div>
+      <div class="info">
+        <div class="info__company">${esc(r.companyZh)}</div>
+        <div class="info__name">${esc(line2)}</div>
+      </div>
+      <button class="gen-pick-btn ${idx >= 0 ? 'gen-pick-btn--active' : ''}">${idx >= 0 ? (idx + 1) : '＋'}</button>
+    `;
+    row.querySelector('.gen-pick-btn').addEventListener('click', () => toggleSelect(r));
+    return row;
+  }
+
+  function toggleSelect(r) {
+    const idx = selectedOfficers.findIndex(s => s.record.id === r.id);
+    if (idx >= 0) {
+      selectedOfficers.splice(idx, 1);
+      selectedOfficers.forEach((s, i) => s.order = i + 1);
+    } else {
+      selectedOfficers.push({ order: selectedOfficers.length + 1, record: r });
+    }
+    renderGenResults();
+  }
+
+  function renderGenSelectedList() {
+    genSelectedEl.innerHTML = '';
+    if (selectedOfficers.length === 0) {
+      genSelectedEl.innerHTML = `<div class="empty-sub" style="padding:12px 0;">尚未選擇任何貴賓，請從上方搜尋結果點擊「＋」加入</div>`;
+      return;
+    }
+    selectedOfficers.forEach((s, i) => {
+      const item = document.createElement('div');
+      item.className = "card-row gen-drag-item";
+      item.style.padding = "10px 18px";
+      item.draggable = true;
+      item.dataset.index = i;
+      const line2 = [s.record.nameZh, s.record.titleZh].filter(Boolean).join('　');
+      item.innerHTML = `
+        <div class="gen-drag-handle" title="拖曳排序">⠿</div>
+        <div class="gen-num-badge">${s.order}</div>
+        <div class="info">
+          <div class="info__company">${esc(s.record.companyZh)}</div>
+          <div class="info__name">${esc(line2)}</div>
+        </div>
+        <button class="delete-btn" title="移除">✕</button>
+      `;
+      item.querySelector('.delete-btn').addEventListener('click', () => toggleSelect(s.record));
+      attachDragHandlers(item);
+      genSelectedEl.appendChild(item);
+    });
+  }
+
+  // ---------- 拖曳排序 ----------
+  let dragSrcIndex = null;
+
+  function attachDragHandlers(item) {
+    item.addEventListener('dragstart', (e) => {
+      dragSrcIndex = Number(item.dataset.index);
+      item.classList.add('gen-drag-item--dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('gen-drag-item--dragging');
+      document.querySelectorAll('.gen-drag-item--over').forEach(el => el.classList.remove('gen-drag-item--over'));
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      item.classList.add('gen-drag-item--over');
+    });
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('gen-drag-item--over');
+    });
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('gen-drag-item--over');
+      const targetIndex = Number(item.dataset.index);
+      if (dragSrcIndex === null || dragSrcIndex === targetIndex) return;
+      const moved = selectedOfficers.splice(dragSrcIndex, 1)[0];
+      selectedOfficers.splice(targetIndex, 0, moved);
+      selectedOfficers.forEach((s, i) => s.order = i + 1);
+      dragSrcIndex = null;
+      renderGenSelectedList();
+      renderGenResults();
+    });
+  }
+
+  genSearchInput.addEventListener('input', renderGenResults);
+
+  genGenerateBtn.addEventListener('click', () => {
+    if (selectedOfficers.length === 0) {
+      alert("請至少選擇一位貴賓再產生文件");
+      return;
+    }
+    const title = genTitleInput.value.trim() || "貴賓合影照片";
+    let rowsHtml = '';
+    for (let i = 0; i < selectedOfficers.length; i += 2) {
+      rowsHtml += '<tr>';
+      for (let j = i; j < i + 2; j++) {
+        if (j < selectedOfficers.length) {
+          const r = selectedOfficers[j].record;
+          const order = selectedOfficers[j].order;
+          const line1 = esc(r.companyZh || '');
+          const line2 = esc(`${r.nameZh || ''}${r.titleZh || ''}`);
+          const PLACEHOLDER_IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGN8dPcCAwwwMSAB3BwAgQQClxK+qckAAAAASUVORK5CYII=';
+          const photoImg = `<img src="${r.photo || PLACEHOLDER_IMG}" style="width:3.6cm;height:3.8cm;object-fit:contain;">`;
+          rowsHtml += `
+            <td style="border:1px solid #000; padding:10px; width:5.13cm; vertical-align:top; font-size:14px; font-family:'PMingLiU','Microsoft JhengHei',serif;">
+              <div>${order}. ${line1}</div>
+              <div style="font-weight:bold; margin-top:4px;">${line2}</div>
+            </td>
+            <td style="border:1px solid #000; padding:6px; width:3.99cm; text-align:center; vertical-align:middle;">
+              ${photoImg}
+            </td>`;
+        } else {
+          rowsHtml += `<td style="border:1px solid #000; width:5.13cm;"></td><td style="border:1px solid #000; width:3.99cm;"></td>`;
+        }
+      }
+      rowsHtml += '</tr>';
+    }
+
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8"><title>${esc(title)}</title>
+        <style>
+          @page WordSection1 { size:21cm 29.7cm; margin:1.5cm 1.0cm 1.5cm 1.0cm; mso-page-orientation:portrait; }
+          div.WordSection1 { page:WordSection1; }
+        </style>
+      </head>
+      <body style="font-family:'PMingLiU','Microsoft JhengHei',serif;">
+        <div class="WordSection1">
+        <p style="text-align:center; font-size:20px; font-weight:bold; margin-bottom:4px;">${esc(title)}</p>
+        <table align="center" style="width:18.69cm; table-layout:fixed; border-collapse:collapse; margin:12px auto 0;" cellpadding="0" cellspacing="0">
+          <colgroup>
+            <col style="width:5.13cm;"><col style="width:3.99cm;"><col style="width:5.13cm;"><col style="width:3.99cm;">
+          </colgroup>
+          <tr><td colspan="4" style="background:#cccccc; padding:8px; font-weight:bold; border:1px solid #000; font-size:14px;">合影貴賓</td></tr>
+          ${rowsHtml}
+        </table>
+        </div>
+      </body>
+      </html>`;
+
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `揭幕及合影貴賓${getTimestampSuffix()}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---------- 檔名用的時間戳記（以電腦本機時間為準） ----------
+  function getTimestampSuffix() {
+    const d = new Date();
+    const MM = String(d.getMonth() + 1).padStart(2, '0');
+    const DD = String(d.getDate()).padStart(2, '0');
+    const HH = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${MM}${DD}_${HH}${mm}`;
+  }
+
+  // ---------- 貴賓揭幕站位圖 ----------
+  // 排列規則：1 號置中（偏左），2 號在其右側，3 號在其左側，
+  // 4 號在 2 號右側，5 號在 3 號左側，以此類推左右交錯排開
+  function computeLineupOrder(n) {
+    const list = [1];
+    const oddTotal = (n % 2 === 1); // 總人數為單數時，規則會與總人數為雙數時左右相反
+    for (let k = 2; k <= n; k++) {
+      const kIsEven = (k % 2 === 0);
+      const goRight = oddTotal ? !kIsEven : kIsEven;
+      if (goRight) list.push(k);      // 往右側加
+      else list.unshift(k);           // 往左側加
+    }
+    return list;
+  }
+
+  genLineupBtn.addEventListener('click', () => {
+    if (selectedOfficers.length === 0) {
+      alert("請至少選擇一位貴賓再產生站位圖");
+      return;
+    }
+    const examTitle = genTitleInput.value.trim();
+    const n = selectedOfficers.length;
+    const order = computeLineupOrder(n);
+    const colWidth = '1.5cm';
+    const tableWidth = (n * 1.5) + 'cm';
+
+    let numHtml = '', nameHtml = '', companyHtml = '';
+    let colgroupHtml = '';
+    order.forEach(rank => {
+      const s = selectedOfficers[rank - 1];
+      const r = s ? s.record : null;
+      const highlight = rank === 1 ? 'background:#f5a623;' : '';
+      const nameLine = r ? esc(`${r.nameZh || ''}${r.titleZh || ''}`) : '';
+      const companyLine = r ? esc(r.companyZh || '') : '';
+
+      colgroupHtml += `<col style="width:${colWidth};">`;
+      numHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:20px; font-weight:bold; padding:8px; width:${colWidth};">${rank}</td>`;
+      nameHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'PMingLiU','Microsoft JhengHei',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${nameLine}</td>`;
+      companyHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'PMingLiU','Microsoft JhengHei',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${companyLine}</td>`;
+    });
+
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8"><title>貴賓揭幕站位圖</title>
+        <style>
+          @page WordSection1 { size:21cm 29.7cm; margin:1.5cm 1.0cm 1.5cm 1.0cm; mso-page-orientation:portrait; }
+          div.WordSection1 { page:WordSection1; }
+        </style>
+      </head>
+      <body style="font-family:'PMingLiU','Microsoft JhengHei',serif;">
+        <div class="WordSection1">
+        ${examTitle ? `<p style="text-align:center; font-size:20px; font-weight:bold; margin-bottom:2px;">${esc(examTitle)}</p>` : ''}
+        <p style="text-align:center; font-size:18px; font-weight:bold; margin-top:0;">貴賓揭幕站位圖</p>
+        <table align="center" style="width:${tableWidth}; table-layout:fixed; border-collapse:collapse; margin:12px auto 0;" cellpadding="0" cellspacing="0">
+          <colgroup>${colgroupHtml}</colgroup>
+          <tr><td colspan="${n}" style="background:#cccccc; padding:8px; font-weight:bold; border:1px solid #000; font-size:14px; text-align:center;">背板</td></tr>
+          <tr style="height:0.8cm; mso-height-rule:atleast;">${numHtml}</tr>
+          <tr style="height:5.55cm; mso-height-rule:exactly;">${nameHtml}</tr>
+          <tr style="height:10.79cm; mso-height-rule:exactly;">${companyHtml}</tr>
+        </table>
+        </div>
+      </body>
+      </html>`;
+
+    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `貴賓站位圖${getTimestampSuffix()}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
 </script>
+
+<style>
+  .gen-pick-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--paper-line);
+    background: #fff; color: var(--navy); font-weight: 700; font-size: 14px; cursor: pointer;
+    flex-shrink: 0; transition: all 0.15s;
+  }
+  .gen-pick-btn:hover { border-color: var(--gold); }
+  .gen-pick-btn--active { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .gen-num-badge {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--navy); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px;
+    flex-shrink: 0;
+  }
+  .gen-drag-handle {
+    cursor: grab; color: var(--ink-soft); font-size: 18px; flex-shrink: 0; padding: 0 2px;
+    user-select: none;
+  }
+  .gen-drag-item { transition: background 0.1s, opacity 0.1s; }
+  .gen-drag-item--dragging { opacity: 0.4; }
+  .gen-drag-item--over { background: #f2e7d3; border-color: var(--gold); }
+</style>
 
 <style>
   :root {
@@ -505,6 +821,7 @@
 </head>
 <body>
   <div class="wrap">
+    <div id="directory-view">
     <div class="header">
       <div>
         <h1>長官中英一覽表</h1>
@@ -512,6 +829,7 @@
       </div>
       <div class="toolbar">
         <span class="status-pill"><span id="status-dot" class="status-dot"></span><span id="status-text">連接中…</span></span>
+        <button id="gen-entry-btn" class="btn">📋 專卷資料產生器</button>
         <button id="refresh-btn" class="btn">↻ 重新整理</button>
         <button id="add-btn" class="btn btn--primary" style="display:none">＋ 新增</button>
         <button id="readonly-btn" class="btn">🔓 編輯模式</button>
@@ -536,6 +854,45 @@
     <div class="note">
       <strong>連接你自己的 Firebase：</strong>打開檔案原始碼，找到 <code>firebaseConfig</code>，
       貼上 Firebase Console 取得的設定即可。未連接前為示範模式，重新整理頁面資料會消失。
+    </div>
+    </div>
+
+    <!-- 專卷資料產生器 -->
+    <div id="generator-view" style="display:none">
+      <div class="header">
+        <div>
+          <h1>專卷資料產生器</h1>
+          <div class="subtitle">Dossier Photo Sheet Generator</div>
+        </div>
+        <div class="toolbar">
+          <button id="gen-back-btn" class="btn">← 返回一覽表</button>
+        </div>
+      </div>
+      <hr class="divider">
+      <div class="desc">從共用資料庫中挑選貴賓、依點擊順序自動編號，最後匯出成 Word 版合影照片表</div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <h2>展覽名稱</h2>
+        <input id="gen-title-input" type="text" placeholder="例如：2026醫療展開幕典禮合影貴賓照片"
+          style="width:100%; font-family:inherit; font-size:16px; font-weight:700; padding:12px 14px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--navy); outline:none;">
+      </div>
+
+      <div class="search-box">
+        <span>🔍</span>
+        <input id="gen-search-input" type="text" placeholder="模糊搜尋：輸入公司、長官姓名或職稱的任一字…">
+      </div>
+
+      <div id="gen-results" style="margin-bottom: 20px;"></div>
+
+      <div class="card">
+        <h2>已選擇的貴賓（依編號順序，點擊 ✕ 可移除）</h2>
+        <div id="gen-selected-list"></div>
+      </div>
+
+      <div style="margin-top:20px; text-align:right;">
+        <button id="gen-lineup-btn" class="btn" style="font-size:14px; padding:12px 24px;">📐 產生站位圖</button>
+        <button id="gen-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📄 產生 Word 文件</button>
+      </div>
     </div>
   </div>
 
