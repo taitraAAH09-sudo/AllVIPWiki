@@ -405,6 +405,7 @@
 
   let selectedOfficers = []; // [{ order, record }]
   let scheduleOfficers = []; // 程序表順序貴賓（獨立順序的複本）[{ order, record }]
+  let rollcallOfficers = []; // 貴賓唱名名單（獨立順序的複本）[{ order, record }]
 
   genEntryBtn.addEventListener('click', () => {
     directoryView.style.display = 'none';
@@ -469,15 +470,26 @@
         scheduleOfficers.splice(sIdx, 1);
         scheduleOfficers.forEach((s, i) => s.order = i + 1);
       }
+      // 同步移除唱名名單中的同一人
+      const rcIdx = rollcallOfficers.findIndex(s => s.record.id === r.id);
+      if (rcIdx >= 0) {
+        rollcallOfficers.splice(rcIdx, 1);
+        rollcallOfficers.forEach((s, i) => s.order = i + 1);
+      }
     } else {
       selectedOfficers.push({ order: selectedOfficers.length + 1, record: r });
       // 同步加入程序表清單（複製一份，順序獨立）
       if (!scheduleOfficers.some(s => s.record.id === r.id)) {
         scheduleOfficers.push({ order: scheduleOfficers.length + 1, record: r });
       }
+      // 同步加入唱名名單（複製一份，順序獨立）
+      if (!rollcallOfficers.some(s => s.record.id === r.id)) {
+        rollcallOfficers.push({ order: rollcallOfficers.length + 1, record: r });
+      }
     }
     renderGenResults();
     renderScheduleList();
+    renderRollcallResults();
   }
 
   function renderGenSelectedList() {
@@ -1032,6 +1044,170 @@
   });
 
   renderScheduleList();
+
+  // ================= 貴賓唱名名單 =================
+  const rollcallSearchInput = document.getElementById('rollcall-search-input');
+  const rollcallResultsEl = document.getElementById('rollcall-results');
+  const rollcallListEl = document.getElementById('rollcall-selected-list');
+  const rollcallGenerateBtn = document.getElementById('rollcall-generate-btn');
+
+  function getRollcallFiltered() {
+    const kw = rollcallSearchInput.value.trim().toLowerCase();
+    if (!kw) return [];
+    return allRecords.filter(r => {
+      const hay = [r.companyZh, r.companyEn, r.nameZh, r.nameEn, r.titleZh, r.titleEn]
+        .filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(kw);
+    });
+  }
+
+  function renderRollcallResults() {
+    const filtered = getRollcallFiltered();
+    rollcallResultsEl.innerHTML = '';
+    if (filtered.length === 0) {
+      const msg = rollcallSearchInput.value.trim() ? '找不到符合的資料' : '輸入關鍵字搜尋要加入唱名名單的貴賓';
+      rollcallResultsEl.innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-sub">${msg}</div></div>`;
+    } else {
+      filtered.forEach(r => rollcallResultsEl.appendChild(buildRollcallRow(r)));
+    }
+    renderRollcallList();
+  }
+
+  function buildRollcallRow(r) {
+    const row = document.createElement('div');
+    row.className = "card-row";
+    const idx = rollcallOfficers.findIndex(s => s.record.id === r.id);
+    const line2 = [r.nameZh, r.titleZh].filter(Boolean).join('　');
+    row.innerHTML = `
+      <div class="avatar">
+        ${r.photo ? `<img src="${r.photo}" alt="">` : `<span>${esc((r.nameZh || r.companyZh || '?')[0])}</span>`}
+      </div>
+      <div class="info">
+        <div class="info__company">${esc(r.companyZh)}</div>
+        <div class="info__name">${esc(line2)}</div>
+      </div>
+      <button class="gen-pick-btn ${idx >= 0 ? 'gen-pick-btn--active' : ''}">${idx >= 0 ? (idx + 1) : '＋'}</button>
+    `;
+    row.querySelector('.gen-pick-btn').addEventListener('click', () => toggleRollcall(r));
+    return row;
+  }
+
+  function toggleRollcall(r) {
+    const idx = rollcallOfficers.findIndex(s => s.record.id === r.id);
+    if (idx >= 0) {
+      rollcallOfficers.splice(idx, 1);
+      rollcallOfficers.forEach((s, i) => s.order = i + 1);
+    } else {
+      rollcallOfficers.push({ order: rollcallOfficers.length + 1, record: r });
+    }
+    renderRollcallResults();
+  }
+
+  function renderRollcallList() {
+    rollcallListEl.innerHTML = '';
+    if (rollcallOfficers.length === 0) {
+      rollcallListEl.innerHTML = `<div class="empty-sub" style="padding:12px 0;">尚未選擇任何貴賓，請從上方搜尋結果點擊「＋」加入</div>`;
+      return;
+    }
+    rollcallOfficers.forEach((s, i) => {
+      const item = document.createElement('div');
+      item.className = "card-row gen-drag-item";
+      item.style.padding = "10px 18px";
+      item.draggable = true;
+      item.dataset.index = i;
+      const line2 = [s.record.nameZh, s.record.titleZh].filter(Boolean).join('　');
+      item.innerHTML = `
+        <div class="gen-drag-handle" title="拖曳排序">⠿</div>
+        <div class="gen-num-badge">${s.order}</div>
+        <div class="info">
+          <div class="info__company">${esc(s.record.companyZh)}</div>
+          <div class="info__name">${esc(line2)}</div>
+        </div>
+        <button class="delete-btn" title="移除">✕</button>
+      `;
+      item.querySelector('.delete-btn').addEventListener('click', () => toggleRollcall(s.record));
+      attachRollcallDragHandlers(item);
+      rollcallListEl.appendChild(item);
+    });
+  }
+
+  let rollcallDragSrcIndex = null;
+  function attachRollcallDragHandlers(item) {
+    item.addEventListener('dragstart', (e) => {
+      rollcallDragSrcIndex = Number(item.dataset.index);
+      item.classList.add('gen-drag-item--dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    item.addEventListener('dragend', () => {
+      item.classList.remove('gen-drag-item--dragging');
+      document.querySelectorAll('.gen-drag-item--over').forEach(el => el.classList.remove('gen-drag-item--over'));
+    });
+    item.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      item.classList.add('gen-drag-item--over');
+    });
+    item.addEventListener('dragleave', () => {
+      item.classList.remove('gen-drag-item--over');
+    });
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      item.classList.remove('gen-drag-item--over');
+      const targetIndex = Number(item.dataset.index);
+      if (rollcallDragSrcIndex === null || rollcallDragSrcIndex === targetIndex) return;
+      const moved = rollcallOfficers.splice(rollcallDragSrcIndex, 1)[0];
+      rollcallOfficers.splice(targetIndex, 0, moved);
+      rollcallOfficers.forEach((s, i) => s.order = i + 1);
+      rollcallDragSrcIndex = null;
+      renderRollcallList();
+      renderRollcallResults();
+    });
+  }
+
+  rollcallSearchInput.addEventListener('input', renderRollcallResults);
+
+  // ---- 唱名名單 Word 生成 ----
+  rollcallGenerateBtn.addEventListener('click', () => {
+    if (rollcallOfficers.length === 0) {
+      alert("請至少選擇一位貴賓再生成唱名名單");
+      return;
+    }
+    const title = genTitleInput.value.trim() || "展覽名稱";
+    const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
+
+    let listHtml = '';
+    rollcallOfficers.forEach((s, i) => {
+      const r = s.record;
+      const zhLine = `${i + 1}. ${[r.companyZh, [r.nameZh, r.titleZh].filter(Boolean).join('')].filter(Boolean).join(' ')}`;
+      const enParts = [r.nameEn, r.titleEn, r.companyEn].filter(Boolean).join(', ');
+      listHtml += `<p style="font-size:14pt; margin:12px 0 0; font-family:${KAI};">${esc(zhLine)}</p>`;
+      if (enParts) {
+        listHtml += `<p style="font-size:12pt; margin:4px 0 0 1.6em; font-family:'Times New Roman',${KAI};">${esc(enParts)}</p>`;
+      }
+    });
+
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8"><title>${esc(title)}唱名貴賓名單</title>
+        <style>
+          @page WordSection1 { size:21cm 29.7cm; margin:1.5cm 1.0cm 1.5cm 1.0cm; mso-page-orientation:portrait; }
+          div.WordSection1 { page:WordSection1; }
+        </style>
+      </head>
+      <body style="font-family:${KAI};">
+        <div class="WordSection1">
+        <p style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
+        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 14px; font-family:${KAI};">開幕典禮唱名貴賓名單</p>
+        ${listHtml}
+        </div>
+      </body>
+      </html>`;
+
+    downloadBlob(html, 'application/msword', `唱名貴賓名單${getTimestampSuffix()}.doc`);
+  });
+
+  renderRollcallResults();
 </script>
 
 <style>
@@ -1350,7 +1526,7 @@
 
       <!-- ================= 程序表順序貴賓 ================= -->
       <div class="card" style="margin-top:26px;">
-        <h2 style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:18px; color:var(--navy);">
+        <h2 style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
           程序表順序貴賓（依編號順序，點擊 ✕ 可移除）
           <label style="font-size:13px; font-weight:700; display:flex; align-items:center; gap:5px; color:var(--warn); cursor:pointer; user-select:none;">
             <input type="checkbox" id="schedule-tentative-chk" style="width:16px; height:16px; cursor:pointer;"> (暫定)
@@ -1391,6 +1567,22 @@
 
         <div style="margin-top:16px; text-align:right;">
           <button id="schedule-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📋 程序表生成</button>
+        </div>
+      </div>
+
+      <!-- ================= 貴賓唱名名單 ================= -->
+      <div class="search-box" style="margin-top:26px;">
+        <span>🔍</span>
+        <input id="rollcall-search-input" type="text" placeholder="模糊搜尋：輸入公司、長官姓名或職稱的任一字…">
+      </div>
+
+      <div id="rollcall-results" style="margin-bottom: 20px;"></div>
+
+      <div class="card">
+        <h2>貴賓唱名名單順序（依編號順序，點擊 ✕ 可移除）</h2>
+        <div id="rollcall-selected-list"></div>
+        <div style="margin-top:16px; text-align:right;">
+          <button id="rollcall-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📢 唱名名單生成</button>
         </div>
       </div>
     </div>
