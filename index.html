@@ -88,9 +88,11 @@
   let demoCounter = 1;
 
   // ---------- 搜尋 / 篩選 ----------
+  let showAllMode = false; // true = 顯示全部筆數；false = 需輸入關鍵字才顯示
+
   function getFiltered() {
     const kw = searchInput.value.trim().toLowerCase();
-    if (!kw) return []; // 沒有搜尋內容時，不顯示任何資料
+    if (!kw) return showAllMode ? allRecords.slice() : []; // 沒有搜尋內容時，依「顯示全部」狀態決定
     return allRecords.filter(r => {
       const hay = [r.companyZh, r.companyEn, r.nameZh, r.nameEn, r.titleZh, r.titleEn]
         .filter(Boolean).join(" ").toLowerCase();
@@ -112,8 +114,8 @@
         title.textContent = "目前還沒有任何資料";
         sub.textContent = "點擊右上角「新增」建立第一筆資料";
       } else if (!searchInput.value.trim()) {
-        title.textContent = "請輸入關鍵字開始搜尋";
-        sub.textContent = `目前共收錄 ${allRecords.length} 筆資料，輸入公司、姓名或職稱以查看`;
+        title.textContent = showAllMode ? "目前還沒有任何資料" : "請輸入關鍵字開始搜尋";
+        sub.textContent = showAllMode ? "" : `目前共收錄 ${allRecords.length} 筆資料，輸入公司、姓名或職稱以查看`;
       } else {
         title.textContent = "找不到符合的資料";
         sub.textContent = "換個關鍵字再試試看";
@@ -267,6 +269,14 @@
 
   // ---------- 其他控制 ----------
   searchInput.addEventListener('input', render);
+  document.getElementById('show-all-btn').addEventListener('click', () => {
+    showAllMode = true;
+    render();
+  });
+  document.getElementById('hide-all-btn').addEventListener('click', () => {
+    showAllMode = false;
+    render();
+  });
   refreshBtn.addEventListener('click', () => {
     refreshBtn.classList.add('spin');
     setTimeout(() => refreshBtn.classList.remove('spin'), 500);
@@ -1268,7 +1278,11 @@
       </div>
     </div>
     <hr class="divider">
-    <div class="desc">此名錄由團隊共用，任何新增／刪除都會同步給所有使用者</div>
+    <div class="desc" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <span>此名錄由團隊共用，任何新增／刪除都會同步給所有使用者</span>
+      <button id="show-all-btn" class="btn" style="font-size:12px; padding:5px 10px;">👁 出現全部</button>
+      <button id="hide-all-btn" class="btn" style="font-size:12px; padding:5px 10px;">🙈 隱藏全部</button>
+    </div>
 
     <div class="search-box">
       <span>🔍</span>
