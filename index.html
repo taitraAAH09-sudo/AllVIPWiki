@@ -9,7 +9,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import {
-    getFirestore, collection, addDoc, deleteDoc, updateDoc, doc,
+    getFirestore, collection, addDoc, deleteDoc, updateDoc, setDoc, doc,
     onSnapshot, query, orderBy
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -287,9 +287,76 @@
   });
 
   function updateReadonlyBtn() {
-    readonlyBtn.innerHTML = readOnly ? `🔒 觀看模式` : `🔓 編輯模式（已解鎖）`;
+    readonlyBtn.innerHTML = readOnly ? `🔒 編輯模式` : `🔓 編輯模式（已解鎖）`;
     readonlyBtn.classList.toggle('readonly-btn--active', !readOnly);
+    const backupRow = document.getElementById('backup-row');
+    if (backupRow) backupRow.style.display = readOnly ? 'none' : 'flex';
   }
+
+  // ---------- 備份下載：把全部資料匯出成 JSON 檔 ----------
+  document.getElementById('backup-btn').addEventListener('click', () => {
+    if (allRecords.length === 0) {
+      alert("目前沒有任何資料可以備份");
+      return;
+    }
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      source: "長官中英一覽表",
+      count: allRecords.length,
+      records: allRecords,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `長官名錄備份${getTimestampSuffix()}_共${allRecords.length}筆.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---------- 還原匯入：把備份 JSON 寫回 Firebase（需先解鎖編輯模式） ----------
+  const restoreFileInput = document.getElementById('restore-file-input');
+  document.getElementById('restore-btn').addEventListener('click', () => {
+    if (!isConnected) {
+      alert("目前未連接 Firebase，無法還原");
+      return;
+    }
+    restoreFileInput.value = '';
+    restoreFileInput.click();
+  });
+  restoreFileInput.addEventListener('change', async () => {
+    const file = restoreFileInput.files[0];
+    if (!file) return;
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch (e) {
+      alert("這不是有效的備份檔（JSON 解析失敗）");
+      return;
+    }
+    const records = Array.isArray(data) ? data : data.records;
+    if (!Array.isArray(records) || records.length === 0) {
+      alert("備份檔裡找不到資料");
+      return;
+    }
+    if (!confirm(`備份檔內含 ${records.length} 筆資料（匯出時間：${data.exportedAt ? data.exportedAt.slice(0, 16).replace('T', ' ') : '不明'}）。\n\n將以備份內容覆蓋/補回相同編號的資料，現有其他資料不受影響。\n確定要還原嗎？`)) return;
+    let ok = 0, fail = 0;
+    for (const r of records) {
+      const { id, ...fields } = r;
+      if (!fields.createdAt) fields.createdAt = Date.now();
+      try {
+        if (id) await setDoc(doc(db, "officers", id), fields);
+        else await addDoc(collection(db, "officers"), fields);
+        ok++;
+      } catch (e) {
+        fail++;
+        console.error("還原失敗：", id, e);
+      }
+    }
+    alert(`還原完成：成功 ${ok} 筆${fail ? `、失敗 ${fail} 筆（詳見主控台）` : ''}`);
+  });
 
   function closePasswordModal() { passwordModal.classList.remove('modal--open'); }
   passwordCancel.addEventListener('click', closePasswordModal);
@@ -1191,7 +1258,12 @@
           <span class="status-pill"><span id="status-dot" class="status-dot"></span><span id="status-text">連接中…</span></span>
           <button id="refresh-btn" class="btn">↻ 重新整理</button>
           <button id="add-btn" class="btn btn--primary" style="display:none">＋ 新增</button>
-          <button id="readonly-btn" class="btn">🔓 編輯模式</button>
+          <button id="readonly-btn" class="btn">🔒 編輯模式</button>
+        </div>
+        <div id="backup-row" style="display:none; gap:10px;">
+          <button id="backup-btn" class="btn">💾 備份下載</button>
+          <button id="restore-btn" class="btn">📥 還原匯入</button>
+          <input id="restore-file-input" type="file" accept=".json,application/json" style="display:none">
         </div>
       </div>
     </div>
