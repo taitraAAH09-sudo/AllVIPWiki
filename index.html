@@ -931,6 +931,8 @@
     }
     const title = genTitleInput.value.trim() || "展覽名稱";
     const tentative = document.getElementById('schedule-tentative-chk').checked;
+    const bilingual = document.getElementById('schedule-bilingual-chk').checked;
+    const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
 
     // ---- 時間欄位 ----
     const y = document.getElementById('sch-year').value.trim();
@@ -939,16 +941,23 @@
     const hh = document.getElementById('sch-hour').value.trim();
     const mi = document.getElementById('sch-min').value.trim();
 
-    // ---- 節目清單（開場5分、每位致詞5分、揭幕5分、參觀35分） ----
-    const items = [{ label: '開場/貴賓唱名', sub: '', dur: 5 }];
+    // ---- 節目清單（開場5分、每位致詞5分、揭幕5分、參觀30分） ----
+    // 中英版：開場/貴賓唱名+Opening、致詞【…】+Remarks by、揭幕儀式/貴賓合影+Group Photo、貴賓參觀展覽+Guided Tour of the Showground
+    const items = [{ label: '開場/貴賓唱名', sub: '', en: 'Opening', dur: 5 }];
     scheduleOfficers.forEach(s => {
+      const r = s.record;
       const type = s.speechType || '貴賓致詞';
-      const person = `${s.record.companyZh || ''} ${s.record.nameZh || ''}${s.record.titleZh || ''}`.trim();
-      const sub = (type === '貴賓致詞') ? `${person}致詞` : person;
-      items.push({ label: type, sub, dur: 5 });
+      const person = `${r.companyZh || ''} ${r.nameZh || ''}${r.titleZh || ''}`.trim();
+      const enParts = [r.nameEn, r.titleEn, r.companyEn].filter(Boolean).join(', ');
+      if (bilingual) {
+        items.push({ label: `【${type}】`, sub: person, en: enParts ? `Remarks by ${enParts}` : '', dur: 5 });
+      } else {
+        const sub = (type === '貴賓致詞') ? `${person}致詞` : person;
+        items.push({ label: type, sub, en: '', dur: 5 });
+      }
     });
-    items.push({ label: '揭幕儀式/貴賓合影', sub: '', dur: 5 });
-    items.push({ label: '貴賓參觀展覽', sub: '', dur: 30 });
+    items.push({ label: '揭幕儀式/貴賓合影', sub: '', en: 'Group Photo', dur: 5 });
+    items.push({ label: '貴賓參觀展覽', sub: '', en: 'Guided Tour of the Showground', dur: 30 });
 
     // ---- 有填時間(XX)就自動排時程 ----
     const fmt = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
@@ -973,9 +982,13 @@
     if (y) dateStr += `${y}年`;
     if (mo) dateStr += `${Number(mo)}月`;
     if (d) dateStr += `${Number(d)}日`;
+    let weekdayIdx = null;
     if (y && mo && d) {
       const dt = new Date(Number(y), Number(mo) - 1, Number(d));
-      if (!isNaN(dt)) dateStr += `(星期${'日一二三四五六'[dt.getDay()]})`;
+      if (!isNaN(dt)) {
+        dateStr += `(星期${'日一二三四五六'[dt.getDay()]})`;
+        weekdayIdx = dt.getDay();
+      }
     }
     let clockStr = '';
     if (startMin !== null) {
@@ -985,14 +998,27 @@
     }
     const timeLine = `時間：${dateStr}${clockStr}`;
 
+    // ---- 英文時間列：Time: 10:00 a.m., Thursday, June 25, 2026 ----
+    let timeLineEn = '';
+    if (bilingual && startMin !== null && y && mo && d && weekdayIdx !== null) {
+      const WD_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+      const MO_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const h24 = Math.floor(startMin / 60), mm2 = startMin % 60;
+      const ap = h24 < 12 ? 'a.m.' : 'p.m.';
+      let h12 = h24 % 12; if (h12 === 0) h12 = 12;
+      timeLineEn = `Time: ${h12}:${String(mm2).padStart(2, '0')} ${ap}, ${WD_EN[weekdayIdx]}, ${MO_EN[Number(mo) - 1]} ${Number(d)}, ${y}`;
+    }
+
     // ---- 地點列 ----
     const venues = [];
-    if (document.getElementById('venue-nangang1').checked) venues.push('南港一館');
-    if (document.getElementById('venue-nangang2').checked) venues.push('南港二館');
-    if (document.getElementById('venue-wtc1').checked) venues.push('世貿一館');
+    const venuesEn = [];
+    if (document.getElementById('venue-nangang1').checked) { venues.push('南港一館'); venuesEn.push('TaiNEX 1'); }
+    if (document.getElementById('venue-nangang2').checked) { venues.push('南港二館'); venuesEn.push('TaiNEX 2'); }
+    if (document.getElementById('venue-wtc1').checked) { venues.push('世貿一館'); venuesEn.push('TWTC Hall 1'); }
     const extra = document.getElementById('schedule-venue-extra').value.trim();
     if (extra) venues.push(extra);
     const placeLine = `地點：${venues.join('、')}`;
+    const placeLineEn = (bilingual && venuesEn.length > 0) ? `Venue: ${venuesEn.join(', ')}` : '';
 
     // ---- 產生時間（依電腦本機時間，顯示於地點下方、靠右） ----
     const now = new Date();
@@ -1001,15 +1027,20 @@
     // ---- 表格 ----
     let rowsHtml = '';
     items.forEach(it => {
-      const subHtml = it.sub ? `<div style="margin-top:4px; margin-left:2em;">${esc(it.sub)}</div>` : '';
+      const subHtml = it.sub ? `<div style="margin-top:4px;${bilingual ? '' : ' margin-left:2em;'}">${esc(it.sub)}</div>` : '';
+      const enHtml = (bilingual && it.en) ? `<div style="margin-top:4px; font-family:'Times New Roman',${KAI}; font-size:14pt;">${esc(it.en)}</div>` : '';
       rowsHtml += `
         <tr>
-          <td style="border:1px solid #000; padding:8px 6px; width:3.2cm; text-align:center; vertical-align:middle; font-size:14pt; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(it.time)}</td>
-          <td style="border:1px solid #000; padding:8px 12px; width:13.5cm; vertical-align:middle; font-size:18pt; font-family:'DFKai-SB','標楷體','BiauKai',serif;">
-            <div>${esc(it.label)}</div>${subHtml}
+          <td style="border:1px solid #000; padding:8px 6px; width:3.2cm; text-align:center; vertical-align:middle; font-size:14pt; font-family:${KAI};">${esc(it.time)}</td>
+          <td style="border:1px solid #000; padding:8px 12px; width:13.5cm; vertical-align:middle; font-size:${bilingual ? '16pt' : '18pt'}; font-family:${KAI};">
+            <div>${esc(it.label)}</div>${subHtml}${enHtml}
           </td>
         </tr>`;
     });
+
+    const thirdTitle = bilingual ? `程序表/ Agenda${tentative ? '(暫定)' : ''}` : `程序表${tentative ? '(暫定)' : ''}`;
+    const headTime = bilingual ? '時間/Time' : '時間';
+    const headContent = bilingual ? '程序/ Agenda' : '內容';
 
     const html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
@@ -1020,19 +1051,21 @@
           div.WordSection1 { page:WordSection1; }
         </style>
       </head>
-      <body style="font-family:'DFKai-SB','標楷體','BiauKai',serif;">
+      <body style="font-family:${KAI};">
         <div class="WordSection1">
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(title)}</p>
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0; font-family:'DFKai-SB','標楷體','BiauKai',serif;">開幕典禮</p>
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:'DFKai-SB','標楷體','BiauKai',serif;">程序表${tentative ? '(暫定)' : ''}</p>
-        <p style="font-size:14pt; margin:4px 0; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(timeLine)}</p>
-        <p style="font-size:14pt; margin:4px 0; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(placeLine)}</p>
-        <p style="font-size:14pt; margin:2px 0 6px; text-align:right; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(genTimeLine)}</p>
+        <p style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
+        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0; font-family:${KAI};">開幕典禮</p>
+        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:${KAI};">${esc(thirdTitle)}</p>
+        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(timeLine)}</p>
+        ${timeLineEn ? `<p style="font-size:13pt; margin:2px 0 2px 3em; font-family:'Times New Roman',${KAI};">${esc(timeLineEn)}</p>` : ''}
+        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(placeLine)}</p>
+        ${placeLineEn ? `<p style="font-size:13pt; margin:2px 0 2px 3em; font-family:'Times New Roman',${KAI};">${esc(placeLineEn)}</p>` : ''}
+        <p style="font-size:14pt; margin:2px 0 6px; text-align:right; font-family:${KAI};">${esc(genTimeLine)}</p>
         <table align="center" style="width:16.7cm; table-layout:fixed; border-collapse:collapse; margin:6px auto 0;" cellpadding="0" cellspacing="0">
           <colgroup><col style="width:3.2cm;"><col style="width:13.5cm;"></colgroup>
           <tr>
-            <td style="border:1px solid #000; background:#cccccc; padding:8px 6px; text-align:center; font-weight:bold; font-size:18pt; font-family:'DFKai-SB','標楷體','BiauKai',serif;">時間</td>
-            <td style="border:1px solid #000; background:#cccccc; padding:8px 12px; text-align:center; font-weight:bold; font-size:18pt; font-family:'DFKai-SB','標楷體','BiauKai',serif;">內容</td>
+            <td style="border:1px solid #000; background:#cccccc; padding:8px 6px; text-align:center; font-weight:bold; font-size:18pt; font-family:${KAI};">${esc(headTime)}</td>
+            <td style="border:1px solid #000; background:#cccccc; padding:8px 12px; text-align:center; font-weight:bold; font-size:18pt; font-family:${KAI};">${esc(headContent)}</td>
           </tr>
           ${rowsHtml}
         </table>
@@ -1208,6 +1241,820 @@
   });
 
   renderRollcallResults();
+
+  // ================= 接待計畫 =================
+  const RECEPTION_STAFF = [
+    '展覽處 鄧之誠處長','南港張如蕙主任','南港陳瑾緻副主任','展覽處 張碧容副處長',
+    '展覽處 張卓文組長','展覽處 曾群佩組長','李建緯組長','徐毅勤','陳雅筑','許妃棻',
+    '吳亭瑩','陳冠樺','黃楷婷','黃韻蓁','莊適博','王心如','鄧紀希','劉書吟','吳芷鈴',
+    '襄儀1位','公關公司1位','(待確認)'
+  ];
+  // 特定貴賓自動帶入的固定資訊（比對姓名包含關鍵字即帶入）
+  const VIP_EXTRA = {
+    '黃志芳': '秘書：陳柏仰#1793\n司機：李晟弘Ricky\n李先生0926-009-269\n車號：RFA-8995',
+    '何志偉': '陪同：\n車號：\n聯絡人：\n0933-201-462\n林主任\n預計 抵達',
+    '何晉滄': '車號：ARF7223\n聯絡人：\n貿易署發展組袁小姐\n02-2397-7307',
+    '陳佩利': '陪同：(楊組長不出席)\n貿易署 黃昭蓉科長\n貿易署 鄭蕙玲科長\n貿易署同仁3人\n車號：NU0163\n聯絡人：李昱霈0963-386-018',
+    '葛葆萱': '陪同：\n拉美司 韓志正司長\n拉美司 陳正宏科長\n拉美司 林立綸科員\n車號：\n聯絡人：\n預計 抵達',
+    '陳堯濱': '聯繫人:本人電話\n0955-823-999'
+  };
+  // 特定貴賓：接待人員欄自動帶入的固定文字（印在拖進去的人名下方）
+  const VIP_STAFF_EXTRA = {
+    '宋奇沛': '陳勝地總幹事\n0912-273-200\n黃副總幹事\n02-2723-0036',
+    '郭豊標': '秘書吳芳姍\n02-2725-2585\n0939-936-330',
+    '陳堯濱': '沈秘書0966-598-102',
+    '呂溪賓': '協會:\n鄭文涵\n0978-550-093\n(林伊晏秘書\n0932-101-329)'
+  };
+  // 標籤：程序表上有排 →(致詞、合影)；站位圖名單有選 →(合影)
+  function guestMark(r) {
+    if (scheduleOfficers.some(s => s.record.id === r.id)) return '(致詞、合影)';
+    if (selectedOfficers.some(s => s.record.id === r.id)) return '(合影)';
+    return '';
+  }
+
+  const receptionPoolEl = document.getElementById('reception-staff-pool');
+  const receptionListEl = document.getElementById('reception-list');
+  const receptionGenerateBtn = document.getElementById('reception-generate-btn');
+  const receptionFooterTa = document.getElementById('reception-footer-note');
+
+  const receptionData = new Map(); // record.id -> { staff:[], time:'', note:'', extra:'' }
+  let armedStaff = null; // 手機/點選模式：先點人名，再點目標格
+
+  const nl2br = t => esc(t || '').replace(/\n/g, '<br>');
+  const X = v => (v && String(v).trim()) ? String(v).trim() : 'XXX';
+
+  // ---- 拖曳時靠近視窗上下邊緣自動捲動（滾輪在原生拖曳中無法使用的替代方案） ----
+  document.addEventListener('dragover', e => {
+    const margin = 90, speed = 20;
+    if (e.clientY < margin) window.scrollBy(0, -speed);
+    else if (window.innerHeight - e.clientY < margin) window.scrollBy(0, speed);
+  });
+
+  function getReceptionEntry(r) {
+    if (!receptionData.has(r.id)) {
+      const key = Object.keys(VIP_EXTRA).find(k => (r.nameZh || '').includes(k));
+      const sKey = Object.keys(VIP_STAFF_EXTRA).find(k => (r.nameZh || '').includes(k));
+      const isChairman = (r.nameZh || '').includes('黃志芳');
+      receptionData.set(r.id, { staff: [], time: isChairman ? '09:00-12:00' : '', note: '', extra: key ? VIP_EXTRA[key] : '', staffExtra: sKey ? VIP_STAFF_EXTRA[sKey] : '' });
+    }
+    return receptionData.get(r.id);
+  }
+
+  // ================= 固定工作桌資料 =================
+  const stationData = {
+    gate:        { staff: [], time: '', slots: { prep: null, notify: null, guide: null, cA: null, cB: null } },
+    lounge:      { staff: [], time: '', slots: { prep: null, s1: null, s2: null, water: null } },
+    desk:        { staff: [], time: '', slots: { notify: null }, note: '' },
+    media:       { staff: [], time: '' },
+    interp:      { staff: [], time: '', machines: '', teacher: '' },
+    elevator:    { staff: [], time: '', elevNums: '' },
+    chairlounge: { staff: [], time: '', slots: { water: null }, floor: '' },
+    pressWater:  { staff: [], time: '' },
+    noBroadcast: { staff: [], time: '' },
+    onsite:      { staff: [], time: '' },
+    mc:          { staff: ['(待確認)'], time: '' },
+    control:     { staff: ['李建緯組長'], time: '' }
+  };
+  const STATION_KEYS = ['gate','lounge','desk','media','interp','elevator','chairlounge','pressWater','noBroadcast','onsite','mc','control'];
+  const STATION_TITLES = {
+    gate: '1樓大門口', lounge: '1樓貴賓室', desk: '貴賓接待桌', media: '媒體接待桌',
+    interp: '同步口譯設備桌', elevator: '電梯控制(待確認)', chairlounge: '貴賓室(董事長專用)',
+    pressWater: '新聞室茶水', noBroadcast: '禁止廣播立牌(1樓)',
+    onsite: '開幕典禮場內作業', mc: '擔任典禮現場司儀', control: '典禮活動現場掌控'
+  };
+
+  // ================= 整表排序（貴賓 + 工作桌可互相拖曳移動） =================
+  let receptionOrder = null; // [{type:'guest', id} | {type:'station', key}]
+  function ensureReceptionOrder() {
+    if (!receptionOrder) {
+      receptionOrder = [
+        ...rollcallOfficers.map(s => ({ type: 'guest', id: s.record.id })),
+        ...STATION_KEYS.map(k => ({ type: 'station', key: k }))
+      ];
+      return;
+    }
+    const ids = new Set(rollcallOfficers.map(s => s.record.id));
+    receptionOrder = receptionOrder.filter(t => t.type === 'station' || ids.has(t.id));
+    const existing = new Set(receptionOrder.filter(t => t.type === 'guest').map(t => t.id));
+    rollcallOfficers.forEach(s => {
+      if (!existing.has(s.record.id)) {
+        let lastGuestIdx = -1;
+        receptionOrder.forEach((t, i) => { if (t.type === 'guest') lastGuestIdx = i; });
+        receptionOrder.splice(lastGuestIdx + 1, 0, { type: 'guest', id: s.record.id });
+      }
+    });
+  }
+  function getRecordById(id) {
+    const s = rollcallOfficers.find(s => s.record.id === id);
+    return s ? s.record : null;
+  }
+
+  // ---- 整列拖曳（只能從 ⠿ 把手啟動，避免跟人名拖曳、選字打架） ----
+  let rowDragSrc = null;
+  function attachRowReorder(row, pos) {
+    const handle = row.querySelector('.row-drag-handle');
+    if (!handle) return;
+    handle.addEventListener('mousedown', () => { row.draggable = true; });
+    handle.addEventListener('touchstart', () => { row.draggable = true; }, { passive: true });
+    row.addEventListener('dragstart', e => {
+      if (!row.draggable) return;
+      rowDragSrc = pos;
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', ''); } catch (err) {}
+      row.classList.add('gen-drag-item--dragging');
+    });
+    row.addEventListener('dragend', () => {
+      row.draggable = false;
+      rowDragSrc = null;
+      row.classList.remove('gen-drag-item--dragging');
+      document.querySelectorAll('.recep-row--over').forEach(el => el.classList.remove('recep-row--over'));
+    });
+    row.addEventListener('dragover', e => {
+      if (rowDragSrc === null) return; // 人名拖曳時不觸發整列排序
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      row.classList.add('recep-row--over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('recep-row--over'));
+    row.addEventListener('drop', e => {
+      if (rowDragSrc === null) return;
+      e.preventDefault();
+      row.classList.remove('recep-row--over');
+      if (rowDragSrc === pos) return;
+      const moved = receptionOrder.splice(rowDragSrc, 1)[0];
+      receptionOrder.splice(pos, 0, moved);
+      rowDragSrc = null;
+      renderReceptionList();
+    });
+  }
+
+  function renderReceptionPool() {
+    if (!receptionPoolEl) return;
+    receptionPoolEl.innerHTML = '';
+    RECEPTION_STAFF.forEach(name => {
+      const chip = document.createElement('div');
+      chip.className = 'staff-chip' + (armedStaff === name ? ' staff-chip--armed' : '');
+      chip.textContent = name;
+      chip.draggable = true;
+      chip.title = '拖曳到「接待人員」欄或 XXX 虛線格，或點一下再點目標格';
+      chip.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', name);
+        e.dataTransfer.effectAllowed = 'copy';
+      });
+      chip.addEventListener('click', () => {
+        armedStaff = (armedStaff === name) ? null : name;
+        renderReceptionPool();
+      });
+      receptionPoolEl.appendChild(chip);
+    });
+  }
+
+  // ---- 通用：接待人員 drop zone ----
+  function makeStaffDrop(st) {
+    const drop = document.createElement('div');
+    drop.className = 'recep-drop';
+    st.staff.forEach((name, si) => {
+      const tag = document.createElement('span');
+      tag.className = 'recep-tag';
+      tag.innerHTML = `${esc(name)}<button title="移除">✕</button>`;
+      tag.querySelector('button').addEventListener('click', () => { st.staff.splice(si, 1); renderReceptionList(); });
+      drop.appendChild(tag);
+    });
+    drop.addEventListener('dragover', ev => {
+      if (rowDragSrc !== null) return;
+      ev.preventDefault(); ev.stopPropagation();
+      ev.dataTransfer.dropEffect = 'copy';
+      drop.classList.add('recep-drop--over');
+    });
+    drop.addEventListener('dragleave', () => drop.classList.remove('recep-drop--over'));
+    drop.addEventListener('drop', ev => {
+      if (rowDragSrc !== null) return;
+      ev.preventDefault(); ev.stopPropagation();
+      drop.classList.remove('recep-drop--over');
+      const n = ev.dataTransfer.getData('text/plain');
+      if (n && !st.staff.includes(n)) { st.staff.push(n); renderReceptionList(); }
+    });
+    drop.addEventListener('click', () => {
+      if (armedStaff) {
+        const n = armedStaff; armedStaff = null; renderReceptionPool();
+        if (!st.staff.includes(n)) { st.staff.push(n); renderReceptionList(); }
+      }
+    });
+    return drop;
+  }
+
+  // ---- 通用：XXX 虛線小格 ----
+  function makeSlot(slotObj, key) {
+    const el = document.createElement('span');
+    const val = slotObj[key];
+    el.className = 'slot-box' + (val ? ' slot-box--filled' : '');
+    if (val) {
+      el.innerHTML = `${esc(val)}<button title="移除">✕</button>`;
+      el.querySelector('button').addEventListener('click', ev => {
+        ev.stopPropagation();
+        slotObj[key] = null;
+        renderReceptionList();
+      });
+    } else {
+      el.textContent = 'XXX';
+      el.title = '拖曳人名到這裡，或先點選上方人名再點這裡';
+    }
+    el.addEventListener('dragover', ev => {
+      if (rowDragSrc !== null) return;
+      ev.preventDefault(); ev.stopPropagation();
+      ev.dataTransfer.dropEffect = 'copy';
+      el.classList.add('slot-box--over');
+    });
+    el.addEventListener('dragleave', () => el.classList.remove('slot-box--over'));
+    el.addEventListener('drop', ev => {
+      if (rowDragSrc !== null) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const n = ev.dataTransfer.getData('text/plain');
+      if (n) { slotObj[key] = n; renderReceptionList(); }
+    });
+    el.addEventListener('click', () => {
+      if (armedStaff) {
+        slotObj[key] = armedStaff;
+        armedStaff = null;
+        renderReceptionPool();
+        renderReceptionList();
+      }
+    });
+    return el;
+  }
+
+  function slotLine(container, parts) {
+    const div = document.createElement('div');
+    div.className = 'slot-line';
+    parts.forEach(pt => {
+      if (typeof pt === 'string') div.appendChild(document.createTextNode(pt));
+      else div.appendChild(pt);
+    });
+    container.appendChild(div);
+  }
+
+  function makeMiniInput(st, prop, placeholder, width) {
+    const inp = document.createElement('input');
+    inp.className = 'recep-input';
+    inp.style.cssText = `display:inline-block; width:${width || '90px'}; padding:3px 8px; font-size:12px; margin:0 3px; vertical-align:middle;`;
+    inp.placeholder = placeholder;
+    inp.value = st[prop] || '';
+    inp.addEventListener('input', ev => { st[prop] = ev.target.value; });
+    return inp;
+  }
+
+  // ================= 依程序表推算接待計畫用的時間脈絡 =================
+  function getReceptionContext() {
+    const fRaw = m => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((m % 1440) + 1440) % 1440 % 60).padStart(2, '0')}`;
+    const y = document.getElementById('sch-year').value.trim();
+    const mo = document.getElementById('sch-month').value.trim();
+    const d = document.getElementById('sch-day').value.trim();
+    const hh = document.getElementById('sch-hour').value.trim();
+    const mi = document.getElementById('sch-min').value.trim();
+
+    let startMin = null;
+    if (hh !== '' && !isNaN(Number(hh))) {
+      startMin = Number(hh) * 60 + (mi !== '' && !isNaN(Number(mi)) ? Number(mi) : 0);
+    }
+    // 程序表節奏：開場5分 → 每位致詞5分 → 揭幕/合影5分 → 參觀30分
+    const speechTimes = new Map();
+    let unveilMin = null, tourMin = null;
+    if (startMin !== null) {
+      scheduleOfficers.forEach((s, i) => speechTimes.set(s.record.id, startMin + 5 + i * 5));
+      unveilMin = startMin + 5 + scheduleOfficers.length * 5;
+      tourMin = unveilMin + 5;
+    }
+    const wd = '日一二三四五六';
+    let dayStr = '', prevStr = '', mdStr = '';
+    if (y && mo && d) {
+      const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+      if (!isNaN(dt)) {
+        dayStr = `${dt.getMonth() + 1}/${dt.getDate()}(${wd[dt.getDay()]})`;
+        mdStr = `${dt.getMonth() + 1}/${dt.getDate()}`;
+        const pv = new Date(dt.getTime() - 86400000);
+        prevStr = `${pv.getMonth() + 1}/${pv.getDate()}(${wd[pv.getDay()]})`;
+      }
+    }
+    const venues = [];
+    if (document.getElementById('venue-nangang1').checked) venues.push('南港一館');
+    if (document.getElementById('venue-nangang2').checked) venues.push('南港二館');
+    if (document.getElementById('venue-wtc1').checked) venues.push('世貿一館');
+    const extraVenue = document.getElementById('schedule-venue-extra').value.trim();
+    if (extraVenue) venues.push(extraVenue);
+    const venueStr = venues.join('、');
+
+    const f = m => (m === null ? '' : fRaw(m));
+    const unified = startMin !== null ? `${f(startMin - 30)}-12:00` : '';
+    return { startMin, speechTimes, unveilMin, tourMin, dayStr, prevStr, mdStr, venueStr, f, unified };
+  }
+
+  // ================= 貴賓自動備註 =================
+  function buildAutoNote(r) {
+    const c = getReceptionContext();
+    const t = m => (m === null ? '' : c.f(m) + ' ');
+    const speechMin = c.speechTimes.has(r.id) ? c.speechTimes.get(r.id) : null;
+
+    if ((r.nameZh || '').includes('黃志芳')) {
+      const lines = [];
+      if (c.prevStr) lines.push(c.prevStr);
+      lines.push('17:00 董事長彩排');
+      lines.push('*董事長17:00抵達展館');
+      lines.push('');
+      if (c.dayStr) lines.push(c.dayStr);
+      lines.push('◎　　梳化');
+      lines.push(`(地點：${c.venueStr ? c.venueStr : ''}貴賓室，待嘉敏姐通知)`);
+      lines.push('◎09:00 董事長總彩');
+      lines.push('◎10:00 媒體聯訪');
+      lines.push('(地點：開幕現場)');
+      lines.push('');
+      lines.push(`◎${t(c.startMin)}開幕典禮`);
+      if (speechMin !== null) lines.push(`◎${t(speechMin)}董事長致詞`);
+      lines.push(`◎${t(c.unveilMin)}揭幕/合影`);
+      return lines.join('\n');
+    }
+
+    const lines = [];
+    lines.push(`◎${t(c.startMin)}開幕典禮`);
+    if (speechMin !== null) lines.push(`◎${t(speechMin)}${(r.nameZh || '')}${(r.titleZh || '')}致詞`);
+    lines.push(`◎${t(c.unveilMin)}揭幕/合影`);
+    lines.push(`◎${t(c.tourMin)}貴賓參觀展覽`);
+    return lines.join('\n');
+  }
+
+  // ================= 工作桌 Word 文字組裝 =================
+  function rehearsalNoteText(c) {
+    return [
+      `◎${c.prevStr}`,
+      '15:00 初彩(活動組、提詞簡報)',
+      '16:00 處長/副座彩排',
+      '19:00 董事長彩排',
+      '*董事長19:00抵達展館',
+      `◎${c.dayStr}`,
+      '09:00董事長彩排(TBC)'
+    ].join('\n');
+  }
+  function stationWordParts(key, c) {
+    const st = stationData[key];
+    let guest = STATION_TITLES[key], staffTxt = st.staff.join('\n'), note = '';
+    switch (key) {
+      case 'gate': {
+        const sl = st.slots;
+        note = [
+          c.dayStr,
+          `${X(sl.prep)}準備空白VIP證10張`,
+          `◎貴賓抵達後通報接待桌:${X(sl.notify)}`,
+          `◎引導貴賓至1樓P區貴賓室:${X(sl.guide)}`,
+          `◎${X(sl.cA)}結束任務後請協助${X(sl.cB)}簡單整理`
+        ].filter(l => l !== '').join('\n');
+        break;
+      }
+      case 'lounge': {
+        const sl = st.slots;
+        note = [
+          c.prevStr,
+          `${X(sl.prep)}準備空白VIP證20張，${c.venueStr}貴賓室場佈(玻璃瓶裝水、玻璃杯)`,
+          '',
+          c.dayStr,
+          `◎${c.startMin !== null ? c.f(c.startMin - 10) : ''}引導貴賓前往會場`,
+          `◎${X(sl.s1)}協助於貴賓抵貴賓室後，立即通報：${X(sl.s2)}(貴賓接待桌)：統計貴賓抵達情形`,
+          '◎貴賓室茶水:',
+          `8:30請${X(sl.water)}確認(請拍照)`
+        ].join('\n');
+        break;
+      }
+      case 'desk': {
+        const names = st.staff.slice();
+        while (names.length < 6) names.push('XXX');
+        const pairs = [];
+        for (let i = 0; i < names.length; i += 2) pairs.push(names.slice(i, i + 2).join('、'));
+        staffTxt = [
+          '【貴賓接待】', ...pairs, '',
+          '【通報】', X(st.slots.notify),
+          '*通報揭幕及合影貴賓',
+          '*通報非名單內重要貴賓(各縣市首長、立法委員、議員等)',
+          '*空位安排及查詢'
+        ].join('\n');
+        note = st.note;
+        break;
+      }
+      case 'media': {
+        guest = ['媒體接待桌', '', '※記者換證：', '新聞室(4樓401)', `${c.mdStr ? c.mdStr + ' ' : ''}南二1樓Q區大服(開媒體換證櫃到12點)`].join('\n');
+        note = '09:30準備新聞資料QR code立牌(1個，展X組會提供)、簽名簿、簽字筆\n◎備記者證30張';
+        break;
+      }
+      case 'interp': {
+        guest = '同步口譯設備桌\n※典禮中英文進行';
+        staffTxt = st.staff.join('\n') + `\n(翻譯機${X(st.machines)}套)`;
+        note = [
+          `◎09:00擺放口譯機器於貴賓座位，結束後回收，請${X(st.staff[0])}寫編號，結束請活動組協助回收口譯機`,
+          '◎口譯設備請拍報銷照片(口譯老師、口譯設備、口譯間、貴賓使用狀況各1張)',
+          '◎口譯老師10:00抵達',
+          `${X(st.teacher)}老師`
+        ].join('\n');
+        break;
+      }
+      case 'elevator': {
+        note = [
+          `◎預計控${(st.elevNums && st.elevNums.trim()) ? st.elevNums.trim() : 'X、X'}號電梯`,
+          '◎電梯控制牌4個：',
+          'B1、1F、4F、7F'
+        ].join('\n');
+        break;
+      }
+      case 'chairlounge': {
+        guest = `${(st.floor && st.floor.trim()) ? st.floor.trim() : 'X'}貴賓室(董事長專用)`;
+        note = [
+          '◎貴賓室茶水:',
+          `${c.dayStr}8:30請${X(st.slots.water)}確認(請拍照)`
+        ].join('\n');
+        break;
+      }
+      case 'pressWater': {
+        note = ['◎請拍報銷照片', '南港展覽館2館 4樓401會議室', '南港展覽館1館 4樓新聞中心'].join('\n');
+        break;
+      }
+      case 'noBroadcast': {
+        note = '禁止時段 09:00-12:00';
+        break;
+      }
+      case 'onsite': {
+        guest = '開幕典禮場內作業：\n請確認揭幕合影貴賓抵達狀況';
+        note = rehearsalNoteText(c);
+        break;
+      }
+      case 'mc': {
+        guest = '擔任典禮現場司儀';
+        note = rehearsalNoteText(c);
+        break;
+      }
+      case 'control': {
+        guest = '典禮活動現場掌控';
+        note = rehearsalNoteText(c);
+        break;
+      }
+    }
+    return { guest, staffTxt, note };
+  }
+
+  // ================= 表尾「註：」 =================
+  function buildFooterTemplate() {
+    const c = getReceptionContext();
+    return [
+      '1. 姓名：佩帶Walky Talky',
+      '2. 開幕典禮安排XX名襄儀小姐協助場內、外接待與典禮進行作業。',
+      '3. 準備物品：名片盤*1、簽字筆10枝、主講桌讀稿架1個、讀稿燈*2',
+      '4. 公關窗口 XXX',
+      '5. 南港2館1樓P區貴賓室：密碼2870 開幕專用',
+      '6. 南港2館4樓R區貴賓室：密碼2870 董事長專用',
+      '7. 南港1館1樓第五貴賓室：密碼2870 備用',
+      '8. 南港2館601會議室：密碼2298',
+      '9. 南港2館窗口(會議室)：',
+      `10. 記者換證：新聞室(4樓401)、${c.mdStr ? c.mdStr + ' ' : ''}南二1樓Q區大服(開媒體換證櫃到12點)`
+    ].join('\n');
+  }
+  document.getElementById('reception-footer-reset-btn').addEventListener('click', () => {
+    if (receptionFooterTa.value.trim() && !confirm('確定要以預設模板覆蓋目前的「註」內容嗎？')) return;
+    receptionFooterTa.value = buildFooterTemplate();
+  });
+
+  // ================= UI 渲染 =================
+  function makeRowShell(num, companyLabel, titleText) {
+    const row = document.createElement('div');
+    row.className = 'recep-row';
+    row.innerHTML = `
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div class="row-drag-handle gen-drag-handle" title="按住拖曳可上下移動整列">⠿</div>
+        <div class="gen-num-badge">${num}</div>
+        <div class="info">
+          <div class="info__company">${esc(companyLabel)}</div>
+          <div class="info__name">${esc(titleText)}</div>
+        </div>
+      </div>`;
+    return row;
+  }
+
+  function renderGuestRow(r, num) {
+    const e = getReceptionEntry(r);
+    const mk = guestMark(r);
+    const line2 = [r.nameZh, r.titleZh].filter(Boolean).join('　') + (mk ? ` ${mk}` : '');
+    const row = makeRowShell(num, r.companyZh || '', line2);
+    const grid = document.createElement('div');
+    grid.className = 'recep-grid';
+    grid.innerHTML = `
+      <div>
+        <div class="recep-label">貴賓附註（秘書/司機/車號/聯絡人…會印在貴賓名單欄）</div>
+        <textarea class="recep-ta recep-extra" rows="4" placeholder="例如：&#10;秘書：○○○#0000&#10;司機：○○○&#10;車號：XXX-0000">${esc(e.extra)}</textarea>
+      </div>
+      <div class="g-staff-cell">
+        <div class="recep-label">接待人員（拖曳或點選上方人名放入）</div>
+        <textarea class="recep-ta recep-staffextra" rows="3" style="margin-top:6px;" placeholder="補充文字（會印在接待人員欄，人名下方）&#10;例如：秘書○○○&#10;0912-345-678">${esc(e.staffExtra || '')}</textarea>
+      </div>
+      <div>
+        <div class="recep-label">接待時間</div>
+        <input class="recep-input recep-time" type="text" placeholder="例如 10:00-12:00" value="${esc(e.time)}">
+      </div>
+      <div>
+        <div class="recep-label">備註（動線/彩排/流程…）</div>
+        <textarea class="recep-ta recep-note" rows="4" placeholder="例如：&#10;◎10:30 開幕典禮&#10;◎11:00 揭幕/合影">${esc(e.note)}</textarea>
+      </div>`;
+    row.appendChild(grid);
+    const staffCell = grid.querySelector('.g-staff-cell');
+    staffCell.insertBefore(makeStaffDrop(e), staffCell.querySelector('.recep-staffextra'));
+    grid.querySelector('.recep-extra').addEventListener('input', ev => { e.extra = ev.target.value; });
+    grid.querySelector('.recep-staffextra').addEventListener('input', ev => { e.staffExtra = ev.target.value; });
+    grid.querySelector('.recep-time').addEventListener('input', ev => { e.time = ev.target.value; });
+    grid.querySelector('.recep-note').addEventListener('input', ev => { e.note = ev.target.value; });
+    return row;
+  }
+
+  function renderStationRow(key, num) {
+    const st = stationData[key];
+    const c = getReceptionContext();
+    const row = makeRowShell(num, '工作桌', STATION_TITLES[key]);
+    row.classList.add('recep-row--station');
+    const grid = document.createElement('div');
+    grid.className = 'recep-grid';
+    grid.innerHTML = `
+      <div class="st-staff-cell">
+        <div class="recep-label">接待人員（可放多位）</div>
+      </div>
+      <div class="st-note-cell" style="grid-column: span 2;">
+        <div class="recep-label">備註（自動模板，XXX 為可拖放格）</div>
+        <div class="slot-note"></div>
+      </div>
+      <div>
+        <div class="recep-label">接待時間</div>
+        <input class="recep-input st-time" type="text" placeholder="按⚡自動帶入" value="${esc(st.time)}">
+      </div>`;
+    row.appendChild(grid);
+    grid.querySelector('.st-staff-cell').appendChild(makeStaffDrop(st));
+    grid.querySelector('.st-time').addEventListener('input', ev => { st.time = ev.target.value; });
+    const nb = grid.querySelector('.slot-note');
+
+    switch (key) {
+      case 'gate':
+        slotLine(nb, [c.dayStr || '(填程序表日期後自動帶入)']);
+        slotLine(nb, [makeSlot(st.slots, 'prep'), '準備空白VIP證10張']);
+        slotLine(nb, ['◎貴賓抵達後通報接待桌:', makeSlot(st.slots, 'notify')]);
+        slotLine(nb, ['◎引導貴賓至1樓P區貴賓室:', makeSlot(st.slots, 'guide')]);
+        slotLine(nb, ['◎', makeSlot(st.slots, 'cA'), '結束任務後請協助', makeSlot(st.slots, 'cB'), '簡單整理']);
+        break;
+      case 'lounge':
+        slotLine(nb, [c.prevStr || '(前一天日期自動帶入)']);
+        slotLine(nb, [makeSlot(st.slots, 'prep'), `準備空白VIP證20張，${c.venueStr}貴賓室場佈(玻璃瓶裝水、玻璃杯)`]);
+        slotLine(nb, ['　']);
+        slotLine(nb, [c.dayStr || '(當天日期自動帶入)']);
+        slotLine(nb, [`◎${c.startMin !== null ? c.f(c.startMin - 10) : ''}引導貴賓前往會場`]);
+        slotLine(nb, ['◎', makeSlot(st.slots, 's1'), '協助於貴賓抵貴賓室後，立即通報：', makeSlot(st.slots, 's2'), '(貴賓接待桌)：統計貴賓抵達情形']);
+        slotLine(nb, ['◎貴賓室茶水:']);
+        slotLine(nb, ['8:30請', makeSlot(st.slots, 'water'), '確認(請拍照)']);
+        break;
+      case 'desk': {
+        slotLine(nb, ['接待人員欄會印成【貴賓接待】兩人一行，不足6位以XXX補齊']);
+        slotLine(nb, ['【通報】', makeSlot(st.slots, 'notify')]);
+        slotLine(nb, ['*通報揭幕及合影貴賓']);
+        slotLine(nb, ['*通報非名單內重要貴賓(各縣市首長、立法委員、議員等)']);
+        slotLine(nb, ['*空位安排及查詢']);
+        const ta = document.createElement('textarea');
+        ta.className = 'recep-ta';
+        ta.rows = 3;
+        ta.placeholder = '此桌的備註欄（自由填寫，會印在最右欄）';
+        ta.value = st.note;
+        ta.addEventListener('input', ev => { st.note = ev.target.value; });
+        nb.appendChild(ta);
+        break;
+      }
+      case 'media':
+        slotLine(nb, [`貴賓名單欄印：媒體接待桌／※記者換證：新聞室(4樓401)／${c.mdStr ? c.mdStr + ' ' : ''}南二1樓Q區大服(開媒體換證櫃到12點)`]);
+        slotLine(nb, ['09:30準備新聞資料QR code立牌(1個，展X組會提供)、簽名簿、簽字筆']);
+        slotLine(nb, ['◎備記者證30張']);
+        break;
+      case 'interp':
+        slotLine(nb, ['貴賓名單欄印：同步口譯設備桌／※典禮中英文進行']);
+        slotLine(nb, ['接待人員欄末行印：(翻譯機', makeMiniInput(st, 'machines', '套數', '64px'), '套)']);
+        slotLine(nb, ['◎09:00擺放口譯機器於貴賓座位，結束後回收，請【接待人員第1位】寫編號，結束請活動組協助回收口譯機']);
+        slotLine(nb, ['◎口譯設備請拍報銷照片(口譯老師、口譯設備、口譯間、貴賓使用狀況各1張)']);
+        slotLine(nb, ['◎口譯老師10:00抵達']);
+        slotLine(nb, [makeMiniInput(st, 'teacher', '口譯老師姓名', '130px'), '老師']);
+        break;
+      case 'elevator':
+        slotLine(nb, ['◎預計控', makeMiniInput(st, 'elevNums', '例如 3、5', '90px'), '號電梯']);
+        slotLine(nb, ['◎電梯控制牌4個：']);
+        slotLine(nb, ['B1、1F、4F、7F']);
+        break;
+      case 'chairlounge':
+        slotLine(nb, ['貴賓名單欄印：', makeMiniInput(st, 'floor', '例如 4樓R區', '110px'), '貴賓室(董事長專用)']);
+        slotLine(nb, ['◎貴賓室茶水:']);
+        slotLine(nb, [(c.dayStr || '(當天日期)'), '8:30請', makeSlot(st.slots, 'water'), '確認(請拍照)']);
+        break;
+      case 'pressWater':
+        slotLine(nb, ['◎請拍報銷照片']);
+        slotLine(nb, ['南港展覽館2館 4樓401會議室']);
+        slotLine(nb, ['南港展覽館1館 4樓新聞中心']);
+        break;
+      case 'noBroadcast':
+        slotLine(nb, ['禁止時段 09:00-12:00']);
+        break;
+      case 'onsite':
+        slotLine(nb, ['貴賓名單欄印：開幕典禮場內作業：請確認揭幕合影貴賓抵達狀況']);
+        rehearsalNoteText(c).split('\n').forEach(l => slotLine(nb, [l]));
+        break;
+      case 'mc':
+        rehearsalNoteText(c).split('\n').forEach(l => slotLine(nb, [l]));
+        break;
+      case 'control':
+        rehearsalNoteText(c).split('\n').forEach(l => slotLine(nb, [l]));
+        break;
+    }
+    return row;
+  }
+
+  function renderReceptionList() {
+    if (!receptionListEl) return;
+    ensureReceptionOrder();
+    receptionListEl.innerHTML = '';
+    if (rollcallOfficers.length === 0) {
+      const hint = document.createElement('div');
+      hint.className = 'empty-sub';
+      hint.style.padding = '12px 0';
+      hint.textContent = '尚未有貴賓。請先在上方「貴賓唱名名單」加入並排序，接待計畫會依唱名順序自動帶入（下方固定工作桌仍可先行安排）。';
+      receptionListEl.appendChild(hint);
+    }
+    receptionOrder.forEach((tok, pos) => {
+      let row = null;
+      if (tok.type === 'guest') {
+        const r = getRecordById(tok.id);
+        if (!r) return;
+        row = renderGuestRow(r, pos + 1);
+      } else {
+        row = renderStationRow(tok.key, pos + 1);
+      }
+      attachRowReorder(row, pos);
+      receptionListEl.appendChild(row);
+    });
+  }
+
+  // 唱名名單一有變動（新增/移除/拖曳排序），接待計畫清單同步跟著更新
+  const _origRenderRollcallList = renderRollcallList;
+  renderRollcallList = function () {
+    _origRenderRollcallList();
+    renderReceptionList();
+  };
+
+  // ---- 依唱名順序重排（把手動拖亂的整表復原成：貴賓照唱名順序 → 工作桌照預設順序） ----
+  document.getElementById('reception-resetorder-btn').addEventListener('click', () => {
+    receptionOrder = null;
+    renderReceptionList();
+  });
+
+  // ---- 一鍵把自動備註/接待時間帶入畫面（可再手動修改） ----
+  const receptionAutofillBtn = document.getElementById('reception-autofill-btn');
+  receptionAutofillBtn.addEventListener('click', () => {
+    if (rollcallOfficers.length === 0) {
+      alert('請先在上方「貴賓唱名名單」加入貴賓');
+      return;
+    }
+    const hasNote = rollcallOfficers.some(s => (getReceptionEntry(s.record).note || '').trim() !== '');
+    if (hasNote && !confirm('已有手動填寫的備註，確定要以程序表自動內容覆蓋全部備註嗎？')) return;
+    const ctx = getReceptionContext();
+    rollcallOfficers.forEach(s => {
+      const e = getReceptionEntry(s.record);
+      e.note = buildAutoNote(s.record);
+      // 接待時間：黃志芳固定 09:00-12:00，其他人統一「程序表開始前30分鐘-12:00」
+      e.time = (s.record.nameZh || '').includes('黃志芳') ? '09:00-12:00' : ctx.unified;
+    });
+    // 所有工作桌的接待時間也一起帶入
+    Object.values(stationData).forEach(st => { st.time = ctx.unified; });
+    // 表尾「註」若還是空的，順便帶入模板
+    if (!receptionFooterTa.value.trim()) receptionFooterTa.value = buildFooterTemplate();
+    renderReceptionList();
+  });
+
+  // ================= 接待計畫 Word 生成 =================
+  receptionGenerateBtn.addEventListener('click', () => {
+    if (rollcallOfficers.length === 0) {
+      alert('請先在上方「貴賓唱名名單」加入貴賓，接待計畫會依唱名順序自動帶入');
+      return;
+    }
+    ensureReceptionOrder();
+    const title = genTitleInput.value.trim() || '展覽名稱';
+    const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
+    const c = getReceptionContext();
+
+    // ---- 時間/地點/定位（沿用程序表欄位） ----
+    const y = document.getElementById('sch-year').value.trim();
+    const mo = document.getElementById('sch-month').value.trim();
+    const d = document.getElementById('sch-day').value.trim();
+    let dateStr = '';
+    if (y) dateStr += `${y}.`;
+    if (mo) dateStr += `${Number(mo)}.`;
+    if (d) dateStr += `${Number(d)}`;
+    if (y && mo && d) {
+      const dt = new Date(Number(y), Number(mo) - 1, Number(d));
+      if (!isNaN(dt)) dateStr += `（${'日一二三四五六'[dt.getDay()]}）`;
+    }
+    let clockStr = '', posLine = '';
+    if (c.startMin !== null) {
+      const dur = scheduleOfficers.length > 0 ? (5 + scheduleOfficers.length * 5 + 5 + 30) : 60;
+      clockStr = `${c.f(c.startMin)}-${c.f(c.startMin + dur)}`;
+      posLine = `${c.f(c.startMin - 90)}就定位 服裝:制服`;
+    }
+    const timeLine = `時間：${dateStr}${dateStr && clockStr ? ' ' : ''}${clockStr}`;
+    const placeLine = `地點：${c.venueStr}`;
+    const now = new Date();
+    const genTimeLine = `更新時間：${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    // ---- 表格：依畫面上的整表順序（貴賓與工作桌可混排） ----
+    const tdBase = `border:1px solid #000; padding:6px 8px; vertical-align:top; font-size:12pt; font-family:${KAI};`;
+    let rowsHtml = '';
+    let num = 0;
+    receptionOrder.forEach(tok => {
+      if (tok.type === 'guest') {
+        const r = getRecordById(tok.id);
+        if (!r) return;
+        num++;
+        const e = getReceptionEntry(r);
+        const co = (r.companyZh || '').includes('對外貿易發展協會') ? '本會' : (r.companyZh || '');
+        const line1 = `${co} ${(r.nameZh || '')}${(r.titleZh || '')}`.trim();
+        const mk = guestMark(r);
+        const guestHtml = `<div style="font-weight:bold;">${esc(line1)}</div>`
+          + (mk ? `<div style="font-weight:bold;">${esc(mk)}</div>` : '')
+          + (e.extra.trim() ? `<div>${nl2br(e.extra)}</div>` : '');
+        const staffCol = [...e.staff, ...((e.staffExtra || '').trim() ? [e.staffExtra.trim()] : [])].join('\n');
+        const timeVal = (r.nameZh || '').includes('黃志芳') ? '09:00-12:00' : ((e.time || '').trim() || c.unified);
+        const noteVal = (e.note || '').trim() !== '' ? e.note : buildAutoNote(r);
+        rowsHtml += `
+        <tr>
+          <td style="${tdBase} width:0.9cm; text-align:center;">${num}</td>
+          <td style="${tdBase} width:5.6cm;">${guestHtml}</td>
+          <td style="${tdBase} width:4.4cm;">${nl2br(staffCol)}</td>
+          <td style="${tdBase} width:2.2cm; text-align:center;">${esc(timeVal)}</td>
+          <td style="${tdBase} width:5.7cm;">${nl2br(noteVal)}</td>
+        </tr>`;
+      } else {
+        num++;
+        const st = stationData[tok.key];
+        const parts = stationWordParts(tok.key, c);
+        const timeVal = (st.time || '').trim() || c.unified;
+        rowsHtml += `
+        <tr>
+          <td style="${tdBase} width:0.9cm; text-align:center;">${num}</td>
+          <td style="${tdBase} width:5.6cm;">${nl2br(parts.guest)}</td>
+          <td style="${tdBase} width:4.4cm;">${nl2br(parts.staffTxt)}</td>
+          <td style="${tdBase} width:2.2cm; text-align:center;">${esc(timeVal)}</td>
+          <td style="${tdBase} width:5.7cm;">${nl2br(parts.note)}</td>
+        </tr>`;
+      }
+    });
+
+    // ---- 表尾「註：」：印在表格正下方，一行一項（如原始文件紅框格式） ----
+    const footerTxt = receptionFooterTa.value.trim() || buildFooterTemplate();
+    const footerHtml = `
+        <p style="font-size:12pt; margin:10px 0 2px; font-family:${KAI};">註：</p>` +
+      footerTxt.split('\n').filter(l => l.trim() !== '').map(l =>
+        `<p style="font-size:12pt; margin:2px 0 2px 1.2em; text-indent:-1.2em; padding-left:1.2em; font-family:${KAI};">${esc(l)}</p>`
+      ).join('');
+
+    const thBase = `border:1px solid #000; background:#cccccc; padding:6px; text-align:center; font-weight:bold; font-size:14pt; font-family:${KAI};`;
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8"><title>${esc(title)}接待計畫</title>
+        <style>
+          @page WordSection1 { size:21cm 29.7cm; margin:1.5cm 1.0cm 1.5cm 1.0cm; mso-page-orientation:portrait; }
+          div.WordSection1 { page:WordSection1; }
+        </style>
+      </head>
+      <body style="font-family:${KAI};">
+        <div class="WordSection1">
+        <p style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
+        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:${KAI};">開幕典禮  接待計畫</p>
+        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(timeLine)}</p>
+        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(placeLine)}</p>
+        ${posLine ? `<p style="font-size:14pt; font-weight:bold; margin:2px 0; text-align:right; font-family:${KAI};">${esc(posLine)}</p>` : ''}
+        <p style="font-size:12pt; margin:2px 0 6px; text-align:right; font-family:${KAI};">${esc(genTimeLine)}</p>
+        <table align="center" style="width:18.8cm; table-layout:fixed; border-collapse:collapse; margin:6px auto 0;" cellpadding="0" cellspacing="0">
+          <colgroup><col style="width:0.9cm;"><col style="width:5.6cm;"><col style="width:4.4cm;"><col style="width:2.2cm;"><col style="width:5.7cm;"></colgroup>
+          <tr>
+            <td colspan="2" style="${thBase}">貴賓名單</td>
+            <td style="${thBase}">接待人員</td>
+            <td style="${thBase}">接待時間</td>
+            <td style="${thBase}">備註</td>
+          </tr>
+          ${rowsHtml}
+        </table>
+        ${footerHtml}
+        </div>
+      </body>
+      </html>`;
+
+    downloadBlob(html, 'application/msword', `接待計畫${getTimestampSuffix()}.doc`);
+  });
+
+  renderReceptionPool();
+  renderReceptionList();
+  if (!receptionFooterTa.value.trim()) receptionFooterTa.value = buildFooterTemplate();
+
 </script>
 
 <style>
@@ -1531,6 +2378,9 @@
           <label style="font-size:13px; font-weight:700; display:flex; align-items:center; gap:5px; color:var(--warn); cursor:pointer; user-select:none;">
             <input type="checkbox" id="schedule-tentative-chk" style="width:16px; height:16px; cursor:pointer;"> (暫定)
           </label>
+          <label style="font-size:13px; font-weight:700; display:flex; align-items:center; gap:5px; color:var(--navy-light); cursor:pointer; user-select:none;">
+            <input type="checkbox" id="schedule-bilingual-chk" style="width:16px; height:16px; cursor:pointer;"> 中英版
+          </label>
         </h2>
         <div id="schedule-selected-list"></div>
 
@@ -1585,6 +2435,71 @@
           <button id="rollcall-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📢 唱名名單生成</button>
         </div>
       </div>
+
+      <!-- ================= 接待計畫 ================= -->
+      <div class="card" style="margin-top:26px;">
+        <h2>接待計畫（貴賓依「唱名名單」順序自動帶入）</h2>
+        <div class="desc" style="margin:6px 0 10px;">接待人員：<b>拖曳</b>下方人名到貴賓的「接待人員」欄或備註裡的 <b>XXX</b> 虛線格（也可以先<b>點一下</b>人名、再點目標格）。人名可重複使用、拖拉後不會消失。時間/地點/定位時間沿用上方程序表的欄位；貴賓後面自動接固定工作桌（大門口、貴賓室、接待桌、媒體桌、同步口譯、電梯控制、董事長貴賓室、新聞室茶水、禁止廣播、場內作業、司儀、現場掌控）。每一列左側 ⠿ 按住拖曳可上下移動整表順序；拖曳時把游標移到視窗上/下邊緣會自動捲動。</div>
+        <div id="reception-staff-pool" class="staff-pool"></div>
+        <div id="reception-list" style="margin-top:16px;"></div>
+        <div style="margin-top:18px;">
+          <div class="recep-label" style="display:flex; align-items:center; gap:10px;">
+            表尾「註：」（獨立印在表格正下方的編號說明，不是各列的備註欄；一行一項，可自由修改）
+            <button id="reception-footer-reset-btn" class="btn" style="font-size:12px; padding:5px 10px;">↻ 帶入預設模板</button>
+          </div>
+          <textarea id="reception-footer-note" class="recep-ta" rows="6" placeholder="按「↻ 帶入預設模板」或「⚡」自動填入，可再修改襄儀人數、公關窗口等"></textarea>
+        </div>
+        <div style="margin-top:16px; display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+          <button id="reception-resetorder-btn" class="btn" style="font-size:14px; padding:12px 24px;">↕ 依唱名順序重排整表</button>
+          <button id="reception-autofill-btn" class="btn" style="font-size:14px; padding:12px 24px;">⚡ 依程序表自動帶入備註</button>
+          <button id="reception-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">🤝 接待計畫生成</button>
+        </div>
+      </div>
+
+      <style>
+        .staff-pool { display:flex; flex-wrap:wrap; gap:8px; }
+        .staff-chip {
+          padding:7px 12px; border:1px solid var(--paper-line); border-radius:999px; background:#fff;
+          font-size:13px; font-weight:600; color:var(--navy); cursor:grab; user-select:none; transition:all .15s;
+        }
+        .staff-chip:hover { border-color: var(--gold); box-shadow:0 1px 4px rgba(28,43,58,0.12); }
+        .staff-chip--armed { background: var(--navy); color:#fff; border-color: var(--navy); }
+        .recep-row { background:#fff; border:1px solid var(--paper-line); border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+        .recep-grid { display:grid; grid-template-columns: 1.15fr 1fr 0.55fr 1.15fr; gap:10px; margin-top:10px; }
+        @media (max-width:760px) { .recep-grid { grid-template-columns:1fr; } }
+        .recep-label { font-size:11.5px; font-weight:700; color:var(--navy-light); margin-bottom:4px; }
+        .recep-input, .recep-ta {
+          width:100%; font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--paper-line);
+          border-radius:5px; background:var(--paper); color:var(--ink); outline:none; box-sizing:border-box;
+        }
+        .recep-input:focus, .recep-ta:focus { border-color:var(--gold); background:#fff; }
+        .recep-ta { resize:vertical; min-height:48px; }
+        .recep-drop {
+          min-height:48px; border:1.5px dashed var(--paper-line); border-radius:6px; padding:6px;
+          display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start; background:var(--paper); cursor:pointer;
+        }
+        .recep-drop--over { border-color:var(--gold); background:#f2e7d3; }
+        .recep-tag {
+          display:inline-flex; align-items:center; gap:6px; background:var(--navy); color:#fff;
+          border-radius:999px; padding:4px 8px 4px 12px; font-size:12.5px; font-weight:600;
+        }
+        .recep-tag button { background:none; border:none; color:#fff; cursor:pointer; font-size:12px; padding:0; }
+        .recep-tag button:hover { color:var(--gold-light); }
+        .recep-row--station { background:#fbf8f1; border-color:var(--gold-light); }
+        .slot-note { font-size:13px; line-height:2; color:var(--ink); background:#fff; border:1px solid var(--paper-line); border-radius:6px; padding:8px 10px; }
+        .slot-line { min-height:22px; }
+        .slot-box {
+          display:inline-flex; align-items:center; gap:5px; vertical-align:middle; margin:0 3px;
+          padding:2px 10px; border:1.5px dashed var(--gold); border-radius:999px;
+          font-size:12px; font-weight:700; color:var(--gold); background:#fff; cursor:pointer; user-select:none;
+        }
+        .slot-box--filled { border-style:solid; background:var(--navy); border-color:var(--navy); color:#fff; }
+        .slot-box--filled button { background:none; border:none; color:#fff; cursor:pointer; font-size:11px; padding:0; }
+        .slot-box--over { background:#f2e7d3; border-color:var(--gold); border-style:solid; }
+        .recep-row--over { border-color:var(--gold); background:#f2e7d3; }
+        .row-drag-handle { cursor:grab; }
+        .row-drag-handle:active { cursor:grabbing; }
+      </style>
     </div>
   </div>
 
