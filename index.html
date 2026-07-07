@@ -407,7 +407,15 @@
   let scheduleOfficers = []; // 程序表順序貴賓（獨立順序的複本）[{ order, record }]
   let rollcallOfficers = []; // 貴賓唱名名單（獨立順序的複本）[{ order, record }]
 
+  // 活動組專用：進入前需工作人員密碼（同一分頁驗證一次即可）
+  const GEN_PW = 'taitra2026';
   genEntryBtn.addEventListener('click', () => {
+    if (sessionStorage.getItem('genPwOk') !== '1') {
+      const pw = prompt('🔒 需要驗證\n此功能為活動組專用，請輸入工作人員密碼：');
+      if (pw === null) return;
+      if (pw !== GEN_PW) { alert('密碼錯誤'); return; }
+      sessionStorage.setItem('genPwOk', '1');
+    }
     directoryView.style.display = 'none';
     generatorView.style.display = 'block';
     genSearchInput.value = '';
@@ -2286,7 +2294,11 @@
         <div class="subtitle">Executive Bilingual Directory</div>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
-        <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 專卷資料產生器</button>
+        <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+          <a href="https://taitraaah09-sudo.github.io/search/gurus.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13.5px;">👥 處內主管出席一覽表</a>
+          <a href="https://taitraaah09-sudo.github.io/search/schedule.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13.5px;">📅 活動日程表</a>
+        </div>
         <div class="toolbar">
           <span class="status-pill"><span id="status-dot" class="status-dot"></span><span id="status-text">連接中…</span></span>
           <button id="refresh-btn" class="btn">↻ 重新整理</button>
@@ -2330,7 +2342,7 @@
     <div id="generator-view" style="display:none">
       <div class="header">
         <div>
-          <h1>專卷資料產生器</h1>
+          <h1>活動組專用</h1>
           <div class="subtitle">Dossier Photo Sheet Generator</div>
         </div>
         <div class="toolbar">
