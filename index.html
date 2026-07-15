@@ -2061,6 +2061,157 @@
 
   renderReceptionPool();
   renderReceptionList();
+
+  // ================= 工作檔存讀（Firebase 同步） =================
+  // 每格存：展名、程序表時間/地點/勾選、站位圖/程序表/唱名三份名單(id+致詞類型)、
+  // 接待計畫（每位貴賓的接待人員/時間/備註/附註、12個工作桌、整表順序、表尾註）
+  const WS_N = 5;
+  let WS_META = {}; // slotN -> {name, savedAt, hasData}
+  const wsSlotsEl = document.getElementById('ws-slots');
+  const wsSummaryEl = document.getElementById('ws-summary');
+
+  function wsGatherState(){
+    const val = id => (document.getElementById(id) ? document.getElementById(id).value : '');
+    const chk = id => !!(document.getElementById(id) && document.getElementById(id).checked);
+    const recep = {};
+    receptionData.forEach((v,k)=>{ recep[k]=v; });
+    return {
+      title: genTitleInput.value,
+      sch: {
+        y: val('sch-year'), mo: val('sch-month'), d: val('sch-day'),
+        hh: val('sch-hour'), mi: val('sch-min'),
+        v1: chk('venue-nangang1'), v2: chk('venue-nangang2'), v3: chk('venue-wtc1'),
+        extra: val('schedule-venue-extra'),
+        tentative: chk('schedule-tentative-chk'), bilingual: chk('schedule-bilingual-chk')
+      },
+      selected: selectedOfficers.map(s=>s.record.id),
+      schedule: scheduleOfficers.map(s=>({id:s.record.id, t:s.speechType||null})),
+      rollcall: rollcallOfficers.map(s=>s.record.id),
+      reception: { data: recep, stations: stationData, order: receptionOrder, footer: receptionFooterTa.value }
+    };
+  }
+
+  function wsApplyState(st){
+    if(!st) return;
+    const setV = (id,v)=>{ const el=document.getElementById(id); if(el) el.value = v||''; };
+    const setC = (id,v)=>{ const el=document.getElementById(id); if(el) el.checked = !!v; };
+    genTitleInput.value = st.title || '';
+    if(st.sch){
+      setV('sch-year',st.sch.y); setV('sch-month',st.sch.mo); setV('sch-day',st.sch.d);
+      setV('sch-hour',st.sch.hh); setV('sch-min',st.sch.mi);
+      setC('venue-nangang1',st.sch.v1); setC('venue-nangang2',st.sch.v2); setC('venue-wtc1',st.sch.v3);
+      setV('schedule-venue-extra',st.sch.extra);
+      setC('schedule-tentative-chk',st.sch.tentative); setC('schedule-bilingual-chk',st.sch.bilingual);
+    }
+    const byId = id => allRecords.find(r=>r.id===id);
+    selectedOfficers.length=0;
+    (st.selected||[]).forEach((id,i)=>{ const r=byId(id); if(r) selectedOfficers.push({order:i+1,record:r}); });
+    scheduleOfficers.length=0;
+    (st.schedule||[]).forEach((it,i)=>{ const r=byId(it.id); if(r) scheduleOfficers.push({order:i+1,record:r,speechType:it.t||null}); });
+    rollcallOfficers.length=0;
+    (st.rollcall||[]).forEach((id,i)=>{ const r=byId(id); if(r) rollcallOfficers.push({order:i+1,record:r}); });
+    if(st.reception){
+      receptionData.clear();
+      Object.entries(st.reception.data||{}).forEach(([k,v])=>{
+        receptionData.set(k,{staff:v.staff||[],time:v.time||'',note:v.note||'',extra:v.extra||'',staffExtra:v.staffExtra||''});
+      });
+      Object.entries(st.reception.stations||{}).forEach(([k,v])=>{
+        if(stationData[k]) Object.assign(stationData[k], v);
+      });
+      receptionOrder = st.reception.order || null;
+      receptionFooterTa.value = st.reception.footer || receptionFooterTa.value;
+    }
+    renderGenResults();
+    renderScheduleList();
+    renderRollcallResults(); // 會連動重繪唱名與接待計畫
+  }
+
+  function wsRender(){
+    wsSlotsEl.innerHTML='';
+    for(let i=1;i<=WS_N;i++){
+      const m = WS_META['slot'+i] || {};
+      const row=document.createElement('div');
+      row.style.cssText='display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;';
+      row.innerHTML=`
+        <button class="btn ws-save" data-i="${i}" style="padding:9px 14px; font-size:13px;">💾 存 ${i}</button>
+        <button class="btn ws-load" data-i="${i}" style="padding:9px 14px; font-size:13px; ${m.hasData?'':'opacity:.45;'}">📁 讀 ${i}</button>
+        <input class="ws-name" data-i="${i}" type="text" placeholder="填人名/場次" value="${esc(m.name||'')}"
+          style="flex:1; min-width:120px; font-family:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--ink); outline:none;">
+        <span title="${m.hasData?('已存檔 '+(m.savedAt?new Date(m.savedAt).toLocaleString('zh-TW',{hour12:false}):'')):'空'}"
+          style="width:16px; height:16px; border-radius:50%; flex-shrink:0; background:${m.hasData?'#c0392b':'#ddd5c5'}; box-shadow:inset 0 -2px 3px rgba(0,0,0,0.18);"></span>
+        <button class="btn ws-clear" data-i="${i}" style="padding:9px 12px; font-size:13px; color:var(--warn);">✕</button>`;
+      wsSlotsEl.appendChild(row);
+    }
+    wsSummaryEl.textContent = Array.from({length:WS_N},(_,k)=>{
+      const m=WS_META['slot'+(k+1)]||{};
+      return `檔${k+1}:${m.hasData?(m.name||'(未命名)'):'空'}`;
+    }).join('｜');
+
+    wsSlotsEl.querySelectorAll('.ws-save').forEach(b=>b.addEventListener('click', async ()=>{
+      const i=b.dataset.i;
+      const m=WS_META['slot'+i]||{};
+      if(m.hasData && !confirm(`檔${i} 已有「${m.name||'(未命名)'}」的資料，確定覆蓋？`)) return;
+      const name=wsSlotsEl.querySelector(`.ws-name[data-i="${i}"]`).value.trim();
+      try{
+        await setDoc(doc(db,'genWorkspaces','slot'+i),{
+          name, savedAt: Date.now(), state: JSON.stringify(wsGatherState())
+        });
+        alert(`✅ 已存到檔${i}${name?'（'+name+'）':''}`);
+      }catch(e){ alert('存檔失敗：'+e.message); }
+    }));
+    wsSlotsEl.querySelectorAll('.ws-load').forEach(b=>b.addEventListener('click', ()=>{
+      const i=b.dataset.i;
+      const m=WS_META['slot'+i];
+      if(!m||!m.hasData){ alert(`檔${i} 是空的`); return; }
+      if(!confirm(`讀取檔${i}「${m.name||'(未命名)'}」？目前畫面上的選擇會被取代。`)) return;
+      try{ wsApplyState(JSON.parse(m.state)); }
+      catch(e){ alert('讀取失敗：'+e.message); }
+    }));
+    wsSlotsEl.querySelectorAll('.ws-clear').forEach(b=>b.addEventListener('click', async ()=>{
+      const i=b.dataset.i;
+      const m=WS_META['slot'+i];
+      if(!m||!m.hasData){ return; }
+      if(!confirm(`清空檔${i}「${m.name||'(未命名)'}」？（所有人都會看到它被清掉）`)) return;
+      try{ await deleteDoc(doc(db,'genWorkspaces','slot'+i)); }
+      catch(e){ alert('清除失敗：'+e.message); }
+    }));
+    // 人名欄：輸入即同步（存在該格 meta；沒存過資料也可先寫名字占位）
+    wsSlotsEl.querySelectorAll('.ws-name').forEach(inp=>{
+      let t=null;
+      inp.addEventListener('input', ()=>{
+        clearTimeout(t);
+        t=setTimeout(async ()=>{
+          const i=inp.dataset.i;
+          const m=WS_META['slot'+i]||{};
+          try{
+            await setDoc(doc(db,'genWorkspaces','slot'+i),
+              { name: inp.value.trim(), savedAt: m.savedAt||null, state: m.state||null }, { merge:true });
+          }catch(e){}
+        }, 600);
+      });
+    });
+  }
+
+  document.getElementById('ws-wipe-btn').addEventListener('click', async ()=>{
+    if(!confirm('確定洗白全部五格？所有存檔（含人名）都會刪除。')) return;
+    if(!confirm('再確認一次：這個動作無法復原。')) return;
+    try{
+      for(let i=1;i<=WS_N;i++) await deleteDoc(doc(db,'genWorkspaces','slot'+i));
+      alert('✅ 已全部清空');
+    }catch(e){ alert('清除失敗：'+e.message); }
+  });
+
+  // 即時同步：別人存檔/改名，所有開著的頁面立刻看到
+  onSnapshot(collection(db,'genWorkspaces'), snap=>{
+    WS_META={};
+    snap.docs.forEach(d=>{
+      const v=d.data()||{};
+      WS_META[d.id]={ name:v.name||'', savedAt:v.savedAt||null, state:v.state||null, hasData: !!v.state };
+    });
+    wsRender();
+  }, err=>{ console.error('workspaces sync', err); });
+  wsRender();
+
   if (!receptionFooterTa.value.trim()) receptionFooterTa.value = buildFooterTemplate();
 
 </script>
@@ -2352,7 +2503,18 @@
       <hr class="divider">
       <div class="desc">從共用資料庫中挑選貴賓、依點擊順序自動編號，最後匯出成 Word 版合影照片表</div>
 
-      <div class="card" style="margin-bottom:16px;">
+            <!-- ================= 工作檔存讀（Firebase 同步，五格） ================= -->
+      <div class="card" style="margin:0 0 22px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+          <h2 style="margin:0;">工作檔存讀</h2>
+          <span class="desc" style="margin:0;">把目前整頁的選擇（展名、程序表、唱名、接待計畫）存進 Firebase；之後開頁按「讀」即可接續。人名欄標示這格現在誰在用。</span>
+        </div>
+        <div id="ws-slots"></div>
+        <div id="ws-summary" class="desc" style="margin:8px 0 10px;"></div>
+        <button id="ws-wipe-btn" class="btn" style="width:100%; color:var(--warn); border-color:var(--warn); font-weight:800;">🧹 洗白全部</button>
+      </div>
+
+<div class="card" style="margin-bottom:16px;">
         <h2>展覽名稱</h2>
         <input id="gen-title-input" type="text" placeholder="例如：2026醫療展開幕典禮合影貴賓照片"
           style="width:100%; font-family:inherit; font-size:16px; font-weight:700; padding:12px 14px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--navy); outline:none;">
