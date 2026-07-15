@@ -2059,6 +2059,18 @@
     downloadBlob(html, 'application/msword', `接待計畫${getTimestampSuffix()}.doc`);
   });
 
+  // 人名列凍結切換（預設凍結，像 Excel 凍結頂端列）
+  const poolWrap = document.getElementById('staff-pool-wrap');
+  const poolPin = document.getElementById('staff-pool-pin');
+  function updatePoolPin(){
+    poolPin.textContent = poolWrap.classList.contains('staff-pool-wrap--stuck') ? '📌 解除凍結' : '📌 凍結人名列';
+  }
+  poolPin.addEventListener('click', () => {
+    poolWrap.classList.toggle('staff-pool-wrap--stuck');
+    updatePoolPin();
+  });
+  updatePoolPin();
+
   renderReceptionPool();
   renderReceptionList();
 
@@ -2614,7 +2626,10 @@
       <div class="card" style="margin-top:26px;">
         <h2>接待計畫（貴賓依「唱名名單」順序自動帶入）</h2>
         <div class="desc" style="margin:6px 0 10px;">接待人員：<b>拖曳</b>下方人名到貴賓的「接待人員」欄或備註裡的 <b>XXX</b> 虛線格（也可以先<b>點一下</b>人名、再點目標格）。人名可重複使用、拖拉後不會消失。時間/地點/定位時間沿用上方程序表的欄位；貴賓後面自動接固定工作桌（大門口、貴賓室、接待桌、媒體桌、同步口譯、電梯控制、董事長貴賓室、新聞室茶水、禁止廣播、場內作業、司儀、現場掌控）。每一列左側 ⠿ 按住拖曳可上下移動整表順序；拖曳時把游標移到視窗上/下邊緣會自動捲動。</div>
-        <div id="reception-staff-pool" class="staff-pool"></div>
+        <div id="staff-pool-wrap" class="staff-pool-wrap staff-pool-wrap--stuck">
+          <div id="reception-staff-pool" class="staff-pool"></div>
+          <button id="staff-pool-pin" class="pool-pin-btn" type="button">📌 解除凍結</button>
+        </div>
         <div id="reception-list" style="margin-top:16px;"></div>
         <div style="margin-top:18px;">
           <div class="recep-label" style="display:flex; align-items:center; gap:10px;">
@@ -2632,6 +2647,21 @@
 
       <style>
         .staff-pool { display:flex; flex-wrap:wrap; gap:8px; }
+        .staff-pool-wrap { display:flex; align-items:flex-start; gap:10px; }
+        .staff-pool-wrap .staff-pool { flex:1; }
+        /* 凍結在視窗頂部（像 Excel 凍結窗格）：捲到下方拖人名時，人名列一直在最上面 */
+        .staff-pool-wrap--stuck {
+          position:sticky; top:0; z-index:30; background:#fff;
+          padding:10px 6px; margin:0 -6px;
+          border-bottom:1px solid var(--paper-line);
+          box-shadow:0 10px 16px -12px rgba(28,43,58,0.4);
+        }
+        .pool-pin-btn {
+          flex-shrink:0; font-family:inherit; font-size:12px; font-weight:700;
+          padding:7px 11px; border:1px solid var(--paper-line); border-radius:6px;
+          background:#fff; color:var(--navy-light); cursor:pointer; white-space:nowrap;
+        }
+        .pool-pin-btn:hover { border-color:var(--gold); color:var(--gold); }
         .staff-chip {
           padding:7px 12px; border:1px solid var(--paper-line); border-radius:999px; background:#fff;
           font-size:13px; font-weight:600; color:var(--navy); cursor:grab; user-select:none; transition:all .15s;
