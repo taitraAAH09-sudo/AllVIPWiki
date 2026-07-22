@@ -2183,8 +2183,14 @@
       const i=b.dataset.i;
       const m=WS_META['slot'+i];
       if(!m||!m.hasData){ return; }
-      if(!confirm(`清空檔${i}「${m.name||'(未命名)'}」？（所有人都會看到它被清掉）`)) return;
-      try{ await deleteDoc(doc(db,'genWorkspaces','slot'+i)); }
+      const label=m.name||'(未命名)';
+      // 三道確認：說明 → 強調不可復原 → 輸入檔號才放行
+      if(!confirm(`【確認 1/3】清空檔${i}「${label}」？\n這格存的展名、程序表、唱名、接待計畫都會被刪除。`)) return;
+      if(!confirm(`【確認 2/3】此動作無法復原，所有同事也會同時失去這份存檔。\n仍要刪除檔${i}「${label}」嗎？`)) return;
+      const typed=prompt(`【確認 3/3】請輸入檔號「${i}」以完成刪除：`);
+      if(typed===null) return;
+      if(typed.trim()!==String(i)){ alert('輸入不符，已取消刪除。'); return; }
+      try{ await deleteDoc(doc(db,'genWorkspaces','slot'+i)); alert(`已清空檔${i}`); }
       catch(e){ alert('清除失敗：'+e.message); }
     }));
     // 人名欄：輸入即同步（存在該格 meta；沒存過資料也可先寫名字占位）
@@ -2205,8 +2211,14 @@
   }
 
   document.getElementById('ws-wipe-btn').addEventListener('click', async ()=>{
-    if(!confirm('確定洗白全部五格？所有存檔（含人名）都會刪除。')) return;
-    if(!confirm('再確認一次：這個動作無法復原。')) return;
+    const used=Array.from({length:WS_N},(_,k)=>k+1).filter(i=>(WS_META['slot'+i]||{}).hasData);
+    if(!used.length){ alert('目前五格都是空的，沒有東西需要清除。'); return; }
+    const listTxt=used.map(i=>`檔${i}：${(WS_META['slot'+i]||{}).name||'(未命名)'}`).join('\n');
+    if(!confirm(`【確認 1/3】洗白全部？將刪除以下存檔：\n${listTxt}`)) return;
+    if(!confirm('【確認 2/3】此動作無法復原，所有同事的存檔都會一起消失。\n仍要繼續嗎？')) return;
+    const typed=prompt('【確認 3/3】請輸入「洗白全部」四個字以完成刪除：');
+    if(typed===null) return;
+    if(typed.trim()!=='洗白全部'){ alert('輸入不符，已取消刪除。'); return; }
     try{
       for(let i=1;i<=WS_N;i++) await deleteDoc(doc(db,'genWorkspaces','slot'+i));
       alert('✅ 已全部清空');
@@ -2553,7 +2565,7 @@
             <button id="gen-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📄 揭幕及合影貴賓</button>
           </div>
           <a href="https://taitraaah09-sudo.github.io/VIP-Photo/" target="_blank" rel="noopener" style="display:block; padding:13px 20px; border:1.5px solid var(--gold); border-radius:6px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:14px; text-decoration:none; text-align:center; box-sizing:border-box;">🔗 貴賓開幕站位產生器(當你會一直改時打開它)</a>
-          <a href="https://taitraaah09-sudo.github.io/security/" target="_blank" rel="noopener" style="display:block; padding:13px 20px; border:1.5px solid var(--gold); border-radius:6px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:14px; text-decoration:none; text-align:center; box-sizing:border-box;">🛡️ 維安簡報 點我 (使用前請先讀檔，會自動連動)</a>
+          <a href="https://taitraaah09-sudo.github.io/search/gurus.html" target="_blank" rel="noopener" style="display:block; padding:13px 20px; border:1.5px solid var(--gold); border-radius:6px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:14px; text-decoration:none; text-align:center; box-sizing:border-box;">👥 處內主管出席一覽表</a>
           <a href="https://taitraaah09-sudo.github.io/search/activity.html" target="_blank" rel="noopener" style="display:block; padding:13px 20px; border:1.5px solid var(--gold); border-radius:6px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:14px; text-decoration:none; text-align:center; box-sizing:border-box;">🪑 席次圖生產系統 & 手機查詢系統</a>
         </div>
       </div>
