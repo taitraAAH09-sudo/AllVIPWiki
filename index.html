@@ -409,17 +409,39 @@
 
   // 活動組專用：進入前需工作人員密碼（同一分頁驗證一次即可）
   const GEN_PW = 'taitra2026';
-  genEntryBtn.addEventListener('click', () => {
-    if (sessionStorage.getItem('genPwOk') !== '1') {
-      const pw = prompt('🔒 需要驗證\n此功能為活動組專用，請輸入工作人員密碼：');
-      if (pw === null) return;
-      if (pw !== GEN_PW) { alert('密碼錯誤'); return; }
-      sessionStorage.setItem('genPwOk', '1');
-    }
+  const genPwModal = document.getElementById('gen-pw-modal');
+  const genPwInput = document.getElementById('gen-pw-input');
+  function openGenerator() {
     directoryView.style.display = 'none';
     generatorView.style.display = 'block';
     genSearchInput.value = '';
     renderGenResults();
+  }
+  function closeGenPwModal() { genPwModal.classList.remove('modal--open'); }
+  function tryGenUnlock() {
+    if (genPwInput.value === GEN_PW) {
+      sessionStorage.setItem('genPwOk', '1');
+      closeGenPwModal();
+      openGenerator();
+    } else {
+      alert('密碼錯誤');
+      genPwInput.value = '';
+      genPwInput.focus();
+    }
+  }
+  genEntryBtn.addEventListener('click', () => {
+    if (sessionStorage.getItem('genPwOk') === '1') { openGenerator(); return; }
+    genPwInput.value = '';
+    genPwModal.classList.add('modal--open');
+    setTimeout(() => genPwInput.focus(), 50);
+  });
+  document.getElementById('gen-pw-submit').addEventListener('click', tryGenUnlock);
+  document.getElementById('gen-pw-cancel').addEventListener('click', closeGenPwModal);
+  document.getElementById('gen-pw-close').addEventListener('click', closeGenPwModal);
+  genPwModal.addEventListener('click', (e) => { if (e.target === genPwModal) closeGenPwModal(); });
+  genPwInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') tryGenUnlock();
+    if (e.key === 'Escape') closeGenPwModal();
   });
   genBackBtn.addEventListener('click', () => {
     generatorView.style.display = 'none';
@@ -2719,6 +2741,21 @@
         .row-drag-handle { cursor:grab; }
         .row-drag-handle:active { cursor:grabbing; }
       </style>
+    </div>
+  </div>
+
+  <!-- 活動組專用 密碼 Modal -->
+  <div id="gen-pw-modal" class="modal">
+    <div class="modal-box" style="max-width:340px;">
+      <h2>🔒 需要驗證 <button id="gen-pw-close" class="modal-close">✕</button></h2>
+      <div class="field-group">
+        <label>此功能為活動組專用，請輸入工作人員密碼</label>
+        <input id="gen-pw-input" type="password" placeholder="請輸入密碼" autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="gen-pw-cancel" class="btn">取消</button>
+        <button type="button" id="gen-pw-submit" class="btn btn--primary">確認</button>
+      </div>
     </div>
   </div>
 
