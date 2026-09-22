@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>長官中英一覽表</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -609,70 +610,206 @@
 
   genSearchInput.addEventListener('input', renderGenResults);
 
-  genGenerateBtn.addEventListener('click', () => {
+  // ===== 揭幕及合影貴賓：直接產生真正的 .docx（照片內嵌在檔案裡，存檔不會掉圖） =====
+  const DOCX_PLACEHOLDER_IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGN8dPcCAwwwMSAB3BwAgQQClxK+qckAAAAASUVORK5CYII=';
+  const xesc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  // 任何圖片來源 → { mime, ext, base64, w, h }；Word 不吃的格式（如 webp）先轉成 jpg
+  async function loadImageForDocx(src) {
+    let dataUrl = src;
+    if (!/^data:image\//.test(src)) {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      dataUrl = await new Promise((ok, bad) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(fr.result);
+        fr.onerror = bad;
+        fr.readAsDataURL(blob);
+      });
+    }
+    const img = await new Promise((ok, bad) => {
+      const im = new Image();
+      im.onload = () => ok(im);
+      im.onerror = bad;
+      im.src = dataUrl;
+    });
+    let m = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(dataUrl);
+    if (!m || !['image/jpeg', 'image/png', 'image/gif'].includes(m[1])) {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0);
+      m = /^data:(image\/jpeg);base64,(.*)$/.exec(c.toDataURL('image/jpeg', 0.92));
+    }
+    const ext = m[1] === 'image/png' ? 'png' : (m[1] === 'image/gif' ? 'gif' : 'jpeg');
+    return { mime: m[1], ext, base64: m[2], w: img.naturalWidth || 1, h: img.naturalHeight || 1 };
+  }
+
+  genGenerateBtn.addEventListener('click', async () => {
     if (selectedOfficers.length === 0) {
       alert("請至少選擇一位貴賓再產生文件");
       return;
     }
-    const title = genTitleInput.value.trim() || "貴賓合影照片";
-    let rowsHtml = '';
-    for (let i = 0; i < selectedOfficers.length; i += 2) {
-      rowsHtml += '<tr>';
-      for (let j = i; j < i + 2; j++) {
-        if (j < selectedOfficers.length) {
-          const r = selectedOfficers[j].record;
-          const order = selectedOfficers[j].order;
-          const line1 = esc(r.companyZh || '');
-          const line2 = esc(`${r.nameZh || ''}${r.titleZh || ''}`);
-          const PLACEHOLDER_IMG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGN8dPcCAwwwMSAB3BwAgQQClxK+qckAAAAASUVORK5CYII=';
-          const photoImg = `<img src="${r.photo || PLACEHOLDER_IMG}" style="width:3.6cm;height:3.8cm;object-fit:contain;">`;
-          rowsHtml += `
-            <td style="border:1px solid #000; padding:10px; width:5.13cm; vertical-align:top; font-size:14px; font-family:'PMingLiU','Microsoft JhengHei',serif;">
-              <div>${order}. ${line1}</div>
-              <div style="font-weight:bold; margin-top:4px;">${line2}</div>
-            </td>
-            <td style="border:1px solid #000; padding:6px; width:3.99cm; text-align:center; vertical-align:middle;">
-              ${photoImg}
-            </td>`;
-        } else {
-          rowsHtml += `<td style="border:1px solid #000; width:5.13cm;"></td><td style="border:1px solid #000; width:3.99cm;"></td>`;
-        }
-      }
-      rowsHtml += '</tr>';
+    if (typeof JSZip === 'undefined') {
+      alert("Word 產生元件（JSZip）沒有載入成功，請確認網路後重新整理頁面再試。");
+      return;
     }
+    const title = genTitleInput.value.trim() || "貴賓合影照片";
+    const btnText = genGenerateBtn.textContent;
+    genGenerateBtn.disabled = true;
+    genGenerateBtn.textContent = '⏳ 產生中…';
 
-    const html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8"><title>${esc(title)}</title>
-        <style>
-          @page WordSection1 { size:21cm 29.7cm; margin:1.5cm 1.0cm 1.5cm 1.0cm; mso-page-orientation:portrait; }
-          div.WordSection1 { page:WordSection1; }
-        </style>
-      </head>
-      <body style="font-family:'PMingLiU','Microsoft JhengHei',serif;">
-        <div class="WordSection1">
-        <p style="text-align:center; font-size:20px; font-weight:bold; margin-bottom:4px;">${esc(title)}</p>
-        <table align="center" style="width:18.69cm; table-layout:fixed; border-collapse:collapse; margin:12px auto 0;" cellpadding="0" cellspacing="0">
-          <colgroup>
-            <col style="width:5.13cm;"><col style="width:3.99cm;"><col style="width:5.13cm;"><col style="width:3.99cm;">
-          </colgroup>
-          <tr><td colspan="4" style="background:#cccccc; padding:8px; font-weight:bold; border:1px solid #000; font-size:14px; text-align:center;">合影貴賓</td></tr>
-          ${rowsHtml}
-        </table>
-        </div>
-      </body>
-      </html>`;
+    try {
+      // ---- 尺寸（1 cm = 567 twips = 360000 EMU）----
+      const COL_TEXT = 2909, COL_PHOTO = 2262;          // 5.13cm / 3.99cm
+      const TABLE_W = (COL_TEXT + COL_PHOTO) * 2;       // 18.69cm
+      const BOX_W = 1296000, BOX_H = 1368000;           // 照片框 3.6cm × 3.8cm
+      const FONT = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="新細明體" w:cs="Times New Roman"/>';
 
-    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `揭幕及合影貴賓${getTimestampSuffix()}.doc`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+      const zip = new JSZip();
+      const media = [];                 // { name, rid, base64 }
+      const mediaCache = new Map();     // 同一張圖只存一次
+      let drawId = 0;
+
+      async function imageRun(src, isPlaceholder) {
+        let info = mediaCache.get(src);
+        if (!info) {
+          const im = await loadImageForDocx(src);
+          const n = media.length + 1;
+          info = { ...im, name: `image${n}.${im.ext}`, rid: `rIdImg${n}` };
+          media.push(info);
+          mediaCache.set(src, info);
+        }
+        // 真實照片：等比例塞進 3.6×3.8 框；佔位圖：填滿框
+        let cx = BOX_W, cy = BOX_H;
+        if (!isPlaceholder) {
+          const s = Math.min(BOX_W / info.w, BOX_H / info.h);
+          cx = Math.round(info.w * s); cy = Math.round(info.h * s);
+        }
+        drawId++;
+        return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">`
+          + `<wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${drawId}" name="Picture ${drawId}"/>`
+          + `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>`
+          + `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+          + `<pic:pic><pic:nvPicPr><pic:cNvPr id="${drawId}" name="${info.name}"/><pic:cNvPicPr/></pic:nvPicPr>`
+          + `<pic:blipFill><a:blip r:embed="${info.rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+          + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`
+          + `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
+      }
+
+      const para = (text, { bold = false, size = 22, jc = null, after = 0 } = {}) =>
+        `<w:p><w:pPr><w:spacing w:before="0" w:after="${after}"/>${jc ? `<w:jc w:val="${jc}"/>` : ''}</w:pPr>`
+        + `<w:r><w:rPr>${FONT}${bold ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>`
+        + `<w:t xml:space="preserve">${xesc(text)}</w:t></w:r></w:p>`;
+
+      const cell = (w, inner, { vAlign = 'top', mar = null } = {}) =>
+        `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>`
+        + (mar ? `<w:tcMar><w:left w:w="${mar}" w:type="dxa"/><w:right w:w="${mar}" w:type="dxa"/></w:tcMar>` : '')
+        + `<w:vAlign w:val="${vAlign}"/></w:tcPr>${inner}</w:tc>`;
+
+      // ---- 表格列 ----
+      let rows = '';
+      for (let i = 0; i < selectedOfficers.length; i += 2) {
+        rows += '<w:tr><w:trPr><w:cantSplit/></w:trPr>';
+        for (let j = i; j < i + 2; j++) {
+          if (j < selectedOfficers.length) {
+            const r = selectedOfficers[j].record;
+            const order = selectedOfficers[j].order;
+            const line1 = `${order}. ${r.companyZh || ''}`;
+            const line2 = `${r.nameZh || ''}${r.titleZh || ''}`;
+            let pic;
+            try {
+              pic = await imageRun(r.photo || DOCX_PLACEHOLDER_IMG, !r.photo);
+            } catch (e) {
+              console.warn('照片讀取失敗，改用空白框：', r.nameZh, e);
+              pic = await imageRun(DOCX_PLACEHOLDER_IMG, true);
+            }
+            rows += cell(COL_TEXT, para(line1, { after: 60 }) + para(line2, { bold: true }), { vAlign: 'top' });
+            rows += cell(COL_PHOTO, `<w:p><w:pPr><w:spacing w:before="60" w:after="60"/><w:jc w:val="center"/></w:pPr>${pic}</w:p>`, { vAlign: 'center', mar: 57 });
+          } else {
+            rows += cell(COL_TEXT, '<w:p/>') + cell(COL_PHOTO, '<w:p/>');
+          }
+        }
+        rows += '</w:tr>';
+      }
+
+      const B = (tag) => `<w:${tag} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`;
+      const table = `<w:tbl><w:tblPr><w:tblW w:w="${TABLE_W}" w:type="dxa"/><w:jc w:val="center"/>`
+        + `<w:tblBorders>${B('top')}${B('left')}${B('bottom')}${B('right')}${B('insideH')}${B('insideV')}</w:tblBorders>`
+        + `<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="100" w:type="dxa"/><w:left w:w="140" w:type="dxa"/><w:bottom w:w="100" w:type="dxa"/><w:right w:w="140" w:type="dxa"/></w:tblCellMar>`
+        + `<w:tblLook w:val="0000"/></w:tblPr>`
+        + `<w:tblGrid><w:gridCol w:w="${COL_TEXT}"/><w:gridCol w:w="${COL_PHOTO}"/><w:gridCol w:w="${COL_TEXT}"/><w:gridCol w:w="${COL_PHOTO}"/></w:tblGrid>`
+        + `<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr><w:tcW w:w="${TABLE_W}" w:type="dxa"/><w:gridSpan w:val="4"/>`
+        + `<w:shd w:val="clear" w:color="auto" w:fill="CCCCCC"/><w:vAlign w:val="center"/></w:tcPr>`
+        + para('合影貴賓', { bold: true, size: 24, jc: 'center' }) + `</w:tc></w:tr>`
+        + rows + `</w:tbl>`;
+
+      const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+        + `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+        + `<w:body>`
+        + para(title, { bold: true, size: 30, jc: 'center', after: 120 })
+        + table
+        + `<w:p/>`
+        + `<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="850" w:right="567" w:bottom="850" w:left="567" w:header="425" w:footer="425" w:gutter="0"/></w:sectPr>`
+        + `</w:body></w:document>`;
+
+      const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+        + `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`
+        + `<w:docDefaults><w:rPrDefault><w:rPr>${FONT}<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="en-US" w:eastAsia="zh-TW"/></w:rPr></w:rPrDefault>`
+        + `<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`
+        + `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>`
+        + `</w:styles>`;
+
+      const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+        + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">`
+        + `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>`
+        + `<Default Extension="xml" ContentType="application/xml"/>`
+        + `<Default Extension="jpeg" ContentType="image/jpeg"/>`
+        + `<Default Extension="png" ContentType="image/png"/>`
+        + `<Default Extension="gif" ContentType="image/gif"/>`
+        + `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>`
+        + `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>`
+        + `</Types>`;
+
+      const rootRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+        + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+        + `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>`
+        + `</Relationships>`;
+
+      const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+        + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`
+        + `<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>`
+        + media.map(m => `<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${m.name}"/>`).join('')
+        + `</Relationships>`;
+
+      zip.file('[Content_Types].xml', contentTypes);
+      zip.file('_rels/.rels', rootRels);
+      zip.file('word/document.xml', documentXml);
+      zip.file('word/styles.xml', stylesXml);
+      zip.file('word/_rels/document.xml.rels', docRels);
+      media.forEach(m => zip.file(`word/media/${m.name}`, m.base64, { base64: true }));
+
+      const blob = await zip.generateAsync({
+        type: 'blob',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        compression: 'DEFLATE'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `揭幕及合影貴賓${getTimestampSuffix()}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error(err);
+      alert('產生 Word 檔失敗：' + (err && err.message ? err.message : err));
+    } finally {
+      genGenerateBtn.disabled = false;
+      genGenerateBtn.textContent = btnText;
+    }
   });
 
   // ---------- 檔名用的時間戳記（以電腦本機時間為準） ----------
