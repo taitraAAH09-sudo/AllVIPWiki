@@ -1048,8 +1048,9 @@
         let tcPr = `<w:tcW w:w="${w}" w:type="dxa"/>` + (span > 1 ? `<w:gridSpan w:val="${span}"/>` : '')
           + (fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>` : '')
           + `<w:tcMar><w:top w:w="${pad[0]}" w:type="dxa"/><w:left w:w="${pad[3]}" w:type="dxa"/><w:bottom w:w="${pad[2]}" w:type="dxa"/><w:right w:w="${pad[1]}" w:type="dxa"/></w:tcMar>`
-          + (vertical ? '<w:textDirection w:val="tbRl"/>' : '')
+          + (vertical ? '<w:textDirection w:val="tbRlV"/>' : '')   // 直書、中文字維持正立
           + `<w:vAlign w:val="${vMap[ts['vertical-align']] || 'top'}"/>`;
+        if (vertical) tc.align = 'left';   // 直書時「靠左」＝靠上對齊
         const inner = h2dBlocks(td, tc, {});
         xml += `<w:tc><w:tcPr>${tcPr}</w:tcPr>${inner.length ? inner.join('') : h2dPara('', tc)}</w:tc>`;
       });
