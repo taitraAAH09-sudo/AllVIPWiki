@@ -860,8 +860,247 @@
     return { examTitle, n, people };
   }
 
-  function downloadBlob(html, mime, filename) {
-    const blob = new Blob(['\ufeff', html], { type: mime });
+  // ================= HTML 版面 → 真正的 .docx（所有 Word 匯出共用） =================
+  // 產生器照舊組 HTML，這裡把它翻成 Office Open XML，打包成標準 Word 檔，不再是「網頁假裝成 .doc」。
+  const H2D_FONT_MAP = {
+    'dfkai-sb': '標楷體', '標楷體': '標楷體', 'biaukai': '標楷體',
+    'pmingliu': '新細明體', '新細明體': '新細明體', 'mingliu': '細明體',
+    'microsoft jhenghei': '微軟正黑體', '微軟正黑體': '微軟正黑體',
+    'times new roman': 'Times New Roman', 'arial': 'Arial', 'calibri': 'Calibri'
+  };
+  const H2D_CJK = new Set(['標楷體', '新細明體', '細明體', '微軟正黑體']);
+  const h2dX = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  function h2dStyle(el) {
+    const out = {};
+    (el.getAttribute && el.getAttribute('style') || '').split(';').forEach(d => {
+      const i = d.indexOf(':');
+      if (i > 0) out[d.slice(0, i).trim().toLowerCase()] = d.slice(i + 1).trim();
+    });
+    return out;
+  }
+  // 長度 → twips（1pt = 20 twips）；em 以目前字級計
+  function h2dLen(v, fontPt) {
+    const m = /^(-?[\d.]+)\s*(pt|px|cm|mm|em|in)?$/i.exec(String(v || '').trim());
+    if (!m) return 0;
+    const n = parseFloat(m[1]);
+    switch ((m[2] || 'px').toLowerCase()) {
+      case 'pt': return Math.round(n * 20);
+      case 'px': return Math.round(n * 15);
+      case 'cm': return Math.round(n * 567);
+      case 'mm': return Math.round(n * 56.7);
+      case 'in': return Math.round(n * 1440);
+      case 'em': return Math.round(n * fontPt * 20);
+    }
+    return 0;
+  }
+  function h2dBox(v, fontPt) {   // margin / padding 簡寫 → [上, 右, 下, 左]
+    const p = String(v || '').trim().split(/\s+/).filter(Boolean).map(x => x === 'auto' ? 0 : h2dLen(x, fontPt));
+    if (!p.length) return [0, 0, 0, 0];
+    if (p.length === 1) return [p[0], p[0], p[0], p[0]];
+    if (p.length === 2) return [p[0], p[1], p[0], p[1]];
+    if (p.length === 3) return [p[0], p[1], p[2], p[1]];
+    return p.slice(0, 4);
+  }
+  function h2dFontPt(v, parentPt) {
+    const m = /^([\d.]+)\s*(pt|px|em)?$/i.exec(String(v || '').trim());
+    if (!m) return parentPt;
+    const n = parseFloat(m[1]); const u = (m[2] || 'px').toLowerCase();
+    return u === 'pt' ? n : u === 'em' ? n * parentPt : n * 0.75;
+  }
+  function h2dFonts(v, parent) {
+    const list = String(v || '').split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
+    const mapped = list.map(f => H2D_FONT_MAP[f.toLowerCase()] || H2D_FONT_MAP[f] || null).filter(Boolean);
+    if (!mapped.length) return parent;
+    const ascii = mapped[0];
+    const ea = mapped.find(f => H2D_CJK.has(f)) || parent.ea;
+    return { ascii, ea };
+  }
+  // 可繼承的文字屬性
+  function h2dCtx(el, parent) {
+    const st = h2dStyle(el);
+    const c = { ...parent };
+    if (st['font-size']) c.pt = h2dFontPt(st['font-size'], parent.pt);
+    if (st['font-family']) c.font = h2dFonts(st['font-family'], parent.font);
+    if (st['font-weight']) c.bold = /bold|[6-9]00/.test(st['font-weight']);
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'b' || tag === 'strong') c.bold = true;
+    if (tag === 'i' || tag === 'em') c.italic = true;
+    if (st['text-align']) c.align = st['text-align'];
+    if (st['color']) c.color = st['color'];
+    return { c, st };
+  }
+  function h2dHex(v) {
+    const s = String(v || '').trim();
+    let m = /^#([0-9a-f]{3})$/i.exec(s);
+    if (m) return m[1].split('').map(ch => ch + ch).join('').toUpperCase();
+    m = /^#([0-9a-f]{6})$/i.exec(s);
+    return m ? m[1].toUpperCase() : null;
+  }
+  function h2dRun(text, c, isBreak) {
+    const f = c.font;
+    const color = h2dHex(c.color);
+    const rPr = `<w:rPr><w:rFonts w:ascii="${h2dX(f.ascii)}" w:hAnsi="${h2dX(f.ascii)}" w:eastAsia="${h2dX(f.ea)}" w:cs="${h2dX(f.ascii)}"/>`
+      + (c.bold ? '<w:b/><w:bCs/>' : '') + (c.italic ? '<w:i/><w:iCs/>' : '')
+      + (color && color !== '000000' ? `<w:color w:val="${color}"/>` : '')
+      + `<w:sz w:val="${Math.round(c.pt * 2)}"/><w:szCs w:val="${Math.round(c.pt * 2)}"/></w:rPr>`;
+    return isBreak ? `<w:r>${rPr}<w:br/></w:r>` : `<w:r>${rPr}<w:t xml:space="preserve">${h2dX(text)}</w:t></w:r>`;
+  }
+  const H2D_JC = { center: 'center', right: 'right', left: 'left', justify: 'both' };
+
+  // 區塊元素 → 段落；行內內容（文字、<br>、<b>…）集中到同一段落
+  function h2dBlocks(node, ctx, pOpts) {
+    const out = [];
+    let runs = [];
+    const flush = () => {
+      // 去掉段首段尾的空白
+      while (runs.length && runs[0].ws) runs.shift();
+      while (runs.length && runs[runs.length - 1].ws) runs.pop();
+      if (runs.length) out.push(h2dPara(runs.map(r => r.xml).join(''), ctx, pOpts));
+      runs = [];
+    };
+    const walkInline = (n, c) => {
+      n.childNodes.forEach(ch => {
+        if (ch.nodeType === 3) {
+          const t = ch.nodeValue.replace(/\s+/g, ' ');
+          if (!t) return;
+          if (t === ' ') { if (runs.length && !runs[runs.length - 1].ws) runs.push({ ws: true, xml: h2dRun(' ', c) }); return; }
+          runs.push({ xml: h2dRun(t, c) });
+        } else if (ch.nodeType === 1) {
+          const tag = ch.tagName.toLowerCase();
+          if (tag === 'br') { runs.push({ xml: h2dRun('', c, true) }); return; }
+          if (['p', 'div', 'table', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li'].includes(tag)) {
+            flush();
+            out.push(...h2dElement(ch, c));
+            return;
+          }
+          walkInline(ch, h2dCtx(ch, c).c);
+        }
+      });
+    };
+    walkInline(node, ctx);
+    flush();
+    return out;
+  }
+  function h2dPara(runsXml, c, o = {}) {
+    const jc = H2D_JC[c.align] || null;
+    const ind = [];
+    if (o.left) ind.push(`w:left="${o.left}"`);
+    if (o.right) ind.push(`w:right="${o.right}"`);
+    if (o.first > 0) ind.push(`w:firstLine="${o.first}"`);
+    if (o.first < 0) ind.push(`w:hanging="${-o.first}"`);
+    return `<w:p><w:pPr><w:spacing w:before="${Math.max(0, o.before || 0)}" w:after="${Math.max(0, o.after || 0)}" w:line="240" w:lineRule="auto"/>`
+      + (ind.length ? `<w:ind ${ind.join(' ')}/>` : '')
+      + (jc ? `<w:jc w:val="${jc}"/>` : '')
+      + `</w:pPr>${runsXml}</w:p>`;
+  }
+  function h2dElement(el, parentCtx) {
+    const tag = el.tagName.toLowerCase();
+    const { c, st } = h2dCtx(el, parentCtx);
+    if (tag === 'table') return [h2dTable(el, c, st)];
+    // p / div：段落間距、縮排
+    const m = h2dBox(st['margin'], c.pt);
+    if (st['margin-top']) m[0] = h2dLen(st['margin-top'], c.pt);
+    if (st['margin-right']) m[1] = h2dLen(st['margin-right'], c.pt);
+    if (st['margin-bottom']) m[2] = h2dLen(st['margin-bottom'], c.pt);
+    if (st['margin-left']) m[3] = h2dLen(st['margin-left'], c.pt);
+    const pad = h2dBox(st['padding'], c.pt);
+    if (st['padding-left']) pad[3] = h2dLen(st['padding-left'], c.pt);
+    const opts = {
+      before: m[0], after: m[2],
+      left: (parentCtx.indent || 0) + m[3] + pad[3], right: m[1],
+      first: st['text-indent'] ? h2dLen(st['text-indent'], c.pt) : 0
+    };
+    const blocks = h2dBlocks(el, { ...c, indent: opts.left }, opts);
+    if (!blocks.length && tag === 'p') blocks.push(h2dPara('', c, opts));
+    return blocks;
+  }
+  function h2dTable(tbl, c, st) {
+    const cols = [...tbl.querySelectorAll(':scope > colgroup > col, :scope > col')].map(col => h2dLen(h2dStyle(col)['width'], c.pt));
+    const trs = [...tbl.querySelectorAll(':scope > tr, :scope > tbody > tr, :scope > thead > tr')];
+    const nCols = cols.length || Math.max(...trs.map(tr => [...tr.children].reduce((s, td) => s + (Number(td.getAttribute('colspan')) || 1), 0)));
+    const tblW = st['width'] ? h2dLen(st['width'], c.pt) : cols.reduce((a, b) => a + b, 0);
+    const grid = cols.length ? cols : Array(nCols).fill(Math.round(tblW / nCols));
+    const B = (t) => `<w:${t} w:val="single" w:sz="6" w:space="0" w:color="000000"/>`;
+    let xml = `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/>`
+      + ((tbl.getAttribute('align') === 'center' || /auto/.test(st['margin'] || '')) ? '<w:jc w:val="center"/>' : '')
+      + `<w:tblBorders>${B('top')}${B('left')}${B('bottom')}${B('right')}${B('insideH')}${B('insideV')}</w:tblBorders>`
+      + `<w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblLook w:val="0000"/></w:tblPr>`
+      + `<w:tblGrid>${grid.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+    trs.forEach(tr => {
+      const trSt = h2dStyle(tr);
+      let trPr = '<w:cantSplit/>';
+      if (trSt['height']) {
+        const rule = /exactly/.test(trSt['mso-height-rule'] || '') ? 'exact' : 'atLeast';
+        trPr += `<w:trHeight w:val="${h2dLen(trSt['height'], c.pt)}" w:hRule="${rule}"/>`;
+      }
+      xml += `<w:tr><w:trPr>${trPr}</w:trPr>`;
+      let gi = 0;
+      [...tr.children].forEach(td => {
+        const span = Number(td.getAttribute('colspan')) || 1;
+        const w = grid.slice(gi, gi + span).reduce((a, b) => a + b, 0);
+        gi += span;
+        const { c: tc, st: ts } = h2dCtx(td, { ...c, indent: 0 });
+        const pad = h2dBox(ts['padding'], tc.pt);
+        const fill = h2dHex(ts['background'] || ts['background-color']);
+        const vMap = { middle: 'center', top: 'top', bottom: 'bottom' };
+        const vertical = /tb-rl|vertical/.test((ts['writing-mode'] || '') + (ts['layout-flow'] || ''));
+        let tcPr = `<w:tcW w:w="${w}" w:type="dxa"/>` + (span > 1 ? `<w:gridSpan w:val="${span}"/>` : '')
+          + (fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>` : '')
+          + `<w:tcMar><w:top w:w="${pad[0]}" w:type="dxa"/><w:left w:w="${pad[3]}" w:type="dxa"/><w:bottom w:w="${pad[2]}" w:type="dxa"/><w:right w:w="${pad[1]}" w:type="dxa"/></w:tcMar>`
+          + (vertical ? '<w:textDirection w:val="tbRl"/>' : '')
+          + `<w:vAlign w:val="${vMap[ts['vertical-align']] || 'top'}"/>`;
+        const inner = h2dBlocks(td, tc, {});
+        xml += `<w:tc><w:tcPr>${tcPr}</w:tcPr>${inner.length ? inner.join('') : h2dPara('', tc)}</w:tc>`;
+      });
+      xml += '</w:tr>';
+    });
+    return xml + '</w:tbl>';
+  }
+
+  async function htmlToDocxBlob(html) {
+    if (typeof JSZip === 'undefined') throw new Error('Word 產生元件（JSZip）沒有載入成功，請確認網路後重新整理頁面再試。');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // 版面：讀 @page 的紙張與邊界（沒寫就用 A4、上下 1.5cm、左右 1.0cm）
+    const css = [...doc.querySelectorAll('style')].map(s => s.textContent).join('\n');
+    const pageRule = /@page[^{]*\{([^}]*)\}/.exec(css);
+    let pgW = 11906, pgH = 16838, mar = [851, 567, 851, 567], landscape = false;
+    if (pageRule) {
+      const sz = /size\s*:\s*([\d.]+cm)\s+([\d.]+cm)/.exec(pageRule[1]);
+      if (sz) { pgW = h2dLen(sz[1], 12); pgH = h2dLen(sz[2], 12); }
+      const mg = /margin\s*:\s*([^;]+)/.exec(pageRule[1]);
+      if (mg) mar = h2dBox(mg[1], 12);
+      landscape = /landscape/.test(pageRule[1]);
+      if (landscape && pgW < pgH) [pgW, pgH] = [pgH, pgW];
+    }
+    const root = doc.querySelector('.WordSection1') || doc.body;
+    const baseCtx = h2dCtx(doc.body, { pt: 12, font: { ascii: '新細明體', ea: '新細明體' }, bold: false, italic: false, align: null, indent: 0 }).c;
+    const bodyCtx = root === doc.body ? baseCtx : h2dCtx(root, baseCtx).c;
+    const blocks = h2dBlocks(root, bodyCtx, {});
+    // 內文最後若是表格，補一個極小的空段落（Word 規定），避免多出空白頁
+    const tail = `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr></w:p>`;
+    const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+      + `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+      + `<w:body>${blocks.join('')}${tail}`
+      + `<w:sectPr><w:pgSz w:w="${pgW}" w:h="${pgH}"${landscape ? ' w:orient="landscape"' : ''}/>`
+      + `<w:pgMar w:top="${mar[0]}" w:right="${mar[1]}" w:bottom="${mar[2]}" w:left="${mar[3]}" w:header="425" w:footer="425" w:gutter="0"/></w:sectPr>`
+      + `</w:body></w:document>`;
+    const f = bodyCtx.font;
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
+      + `<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`
+      + `<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${h2dX(f.ascii)}" w:hAnsi="${h2dX(f.ascii)}" w:eastAsia="${h2dX(f.ea)}" w:cs="${h2dX(f.ascii)}"/><w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="en-US" w:eastAsia="zh-TW"/></w:rPr></w:rPrDefault>`
+      + `<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`
+      + `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`);
+    zip.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+    zip.file('word/_rels/document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+    zip.file('word/document.xml', documentXml);
+    zip.file('word/styles.xml', stylesXml);
+    return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', compression: 'DEFLATE' });
+  }
+
+  function saveBlobAs(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -869,7 +1108,22 @@
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Word 類匯出一律轉成真正的 .docx；其他類型照原樣下載
+  async function downloadBlob(html, mime, filename) {
+    if (mime === 'application/msword') {
+      try {
+        const blob = await htmlToDocxBlob(html);
+        saveBlobAs(blob, filename.replace(/\.doc$/i, '.docx'));
+      } catch (err) {
+        console.error(err);
+        alert('產生 Word 檔失敗：' + (err && err.message ? err.message : err));
+      }
+      return;
+    }
+    saveBlobAs(new Blob(['\ufeff', html], { type: mime }), filename);
   }
 
   genLineupWordBtn.addEventListener('click', () => {
@@ -922,15 +1176,7 @@
       </body>
       </html>`;
 
-    const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `貴賓站位圖${getTimestampSuffix()}.doc`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(html, 'application/msword', `貴賓站位圖${getTimestampSuffix()}.doc`);
   });
 
   genLineupExcelBtn.addEventListener('click', async () => {
