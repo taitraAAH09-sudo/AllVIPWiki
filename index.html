@@ -429,8 +429,30 @@
       genPwInput.focus();
     }
   }
+  // 快速登入：依序點標題「需 → 驗 → 證」即視同密碼正確
+  const GEN_QUICK_SEQ = ['需', '驗', '證'];
+  let genQuickStep = 0, genQuickTimer = null;
+  function resetGenQuick() { genQuickStep = 0; clearTimeout(genQuickTimer); }
+  document.getElementById('gen-pw-title').addEventListener('click', (e) => {
+    const k = e.target.closest('[data-k]')?.dataset.k;
+    if (!k) return;
+    if (k === GEN_QUICK_SEQ[genQuickStep]) {
+      genQuickStep++;
+      clearTimeout(genQuickTimer);
+      genQuickTimer = setTimeout(resetGenQuick, 3000); // 3 秒內沒點下一個就重來
+      if (genQuickStep === GEN_QUICK_SEQ.length) {
+        resetGenQuick();
+        genPwInput.value = GEN_PW;
+        tryGenUnlock();
+      }
+    } else {
+      resetGenQuick();
+      if (k === GEN_QUICK_SEQ[0]) genQuickStep = 1; // 點錯但剛好是「需」，直接當第一步
+    }
+  });
   genEntryBtn.addEventListener('click', () => {
     if (sessionStorage.getItem('genPwOk') === '1') { openGenerator(); return; }
+    resetGenQuick();
     genPwInput.value = '';
     genPwModal.classList.add('modal--open');
     setTimeout(() => genPwInput.focus(), 50);
@@ -2747,7 +2769,7 @@
   <!-- 活動組專用 密碼 Modal -->
   <div id="gen-pw-modal" class="modal">
     <div class="modal-box" style="max-width:340px;">
-      <h2>🔒 需要驗證 <button id="gen-pw-close" class="modal-close">✕</button></h2>
+      <h2 id="gen-pw-title" style="user-select:none;-webkit-user-select:none;">🔒 <span data-k="需">需</span><span data-k="要">要</span><span data-k="驗">驗</span><span data-k="證">證</span> <button id="gen-pw-close" class="modal-close">✕</button></h2>
       <div class="field-group">
         <label>此功能為活動組專用，請輸入工作人員密碼</label>
         <input id="gen-pw-input" type="password" placeholder="請輸入密碼" autocomplete="off">
