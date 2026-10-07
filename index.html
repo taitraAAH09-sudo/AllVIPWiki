@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表</title>
+<title>長官中英一覽表 V4</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -665,7 +665,7 @@
       const COL_TEXT = 2909, COL_PHOTO = 2262;          // 5.13cm / 3.99cm
       const TABLE_W = (COL_TEXT + COL_PHOTO) * 2;       // 18.69cm
       const BOX_W = 1296000, BOX_H = 1368000;           // 照片框 3.6cm × 3.8cm
-      const FONT = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="新細明體" w:cs="Times New Roman"/>';
+      const FONT = '<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="標楷體" w:cs="Times New Roman"/>';
 
       const zip = new JSZip();
       const media = [];                 // { name, rid, base64 }
@@ -703,6 +703,13 @@
         `<w:p><w:pPr><w:spacing w:before="0" w:after="${after}"/>${jc ? `<w:jc w:val="${jc}"/>` : ''}</w:pPr>`
         + `<w:r><w:rPr>${font}${bold ? '<w:b/><w:bCs/>' : ''}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr>`
         + `<w:t xml:space="preserve">${xesc(text)}</w:t></w:r></w:p>`;
+      // V3 標題：標楷體＋Times New Roman、16 號、固定行高 28、避免孤字
+      const titlePara = (text) => {
+        const sp = Math.round(docAntiOrphan([String(text ?? '')], 10772 / 20, 10772 / 20) * 20);
+        return `<w:p><w:pPr><w:spacing w:before="0" w:after="60" w:line="${DOC_LINE_PT * 20}" w:lineRule="exact"/><w:jc w:val="center"/></w:pPr>`
+          + `<w:r><w:rPr>${KAI_FONT}<w:b/><w:bCs/>${sp ? `<w:spacing w:val="${sp}"/>` : ''}<w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr>`
+          + `<w:t xml:space="preserve">${xesc(text)}</w:t></w:r></w:p>`;
+      };
 
       const cell = (w, inner, { vAlign = 'top', mar = null } = {}) =>
         `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>`
@@ -749,7 +756,7 @@
       const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
         + `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
         + `<w:body>`
-        + para(title, { bold: true, size: 32, jc: 'center', after: 60, font: KAI_FONT })
+        + titlePara(title)
         + `<w:p><w:pPr><w:spacing w:before="0" w:after="80"/><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="標楷體" w:cs="Times New Roman"/><w:color w:val="0000CC"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t xml:space="preserve">${xesc(getUpdateStamp())}</w:t></w:r></w:p>`
         + table
         + `<w:p/>`
@@ -870,6 +877,62 @@
     return { examTitle, n, people };
   }
 
+
+  // ================= 標題區排版規範（V3）=================
+  // 只套在各份 Word 的標題／時間／地點（標 data-v2 的段落）：
+  // 中文標楷體、英文 Times New Roman、16 號、固定行高 28pt、左右對齊、盡量避免孤字獨行
+  const DOC_PT = 16;
+  const DOC_LINE_PT = 28;
+  const DOC_CJK = '標楷體', DOC_LATIN = 'Times New Roman';
+  const _measCtx = document.createElement('canvas').getContext('2d');
+  const isWideCh = ch => /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/.test(ch);
+  function docGlyphW(ch, pt) {
+    if (isWideCh(ch)) return pt;
+    if (!_measCtx) return pt * 0.5;
+    _measCtx.font = `${pt}px "Times New Roman", serif`;
+    return _measCtx.measureText(ch).width;
+  }
+  const DOC_NO_START = /^[，。、；：！？）」』〉》】,.;:!?)\]%]/;
+  const DOC_NO_END = /[（「『〈《【(\[]$/;
+  function docTokens(text) {
+    const raw = String(text || '').match(/[A-Za-z0-9À-ɏ'’.,:;@&/#+\-]+|\s+|[\s\S]/gu) || [];
+    const out = [];
+    raw.forEach(t => {
+      const sp = /^\s+$/.test(t);
+      const last = out[out.length - 1];
+      if (last && !sp && DOC_NO_START.test(t)) { last.t += t; return; }
+      if (last && !sp && !last.sp && DOC_NO_END.test(last.t)) { last.t += t; return; }
+      out.push({ t, sp });
+    });
+    return out;
+  }
+  function docTokW(t, pt, d) { let w = 0; for (const ch of t) w += docGlyphW(ch, pt) + d; return w; }
+  function docWrap(tokens, avail, first, pt, d) {
+    const lines = []; let cur = [], w = 0, max = first;
+    tokens.forEach(tk => {
+      const tw = docTokW(tk.t, pt, d);
+      if (tk.sp) { if (cur.length) { cur.push(tk); w += tw; } return; }
+      if (cur.length && w + tw > max + 0.01) {
+        while (cur.length && cur[cur.length - 1].sp) cur.pop();
+        lines.push(cur); cur = []; w = 0; max = avail;
+      }
+      cur.push(tk); w += tw;
+    });
+    if (cur.length) lines.push(cur);
+    return lines;
+  }
+  const docLineChars = line => line.map(x => x.t).join('').replace(/[\s，。、；：！？）」』〉》】,.;:!?)\]（「『〈《【(\[]/g, '').length;
+  const docHasOrphan = lines => lines.length >= 2 && docLineChars(lines[lines.length - 1]) <= 1;
+  const DOC_SPACING_TRY = [-0.3, -0.6, -0.9, -1.2, -1.5, -1.8, 0.3, 0.6, 0.9, 1.2];
+  function docAntiOrphan(segments, availPt, firstPt, pt = DOC_PT) {
+    if (!(availPt > pt * 2)) return 0;
+    const segs = segments.map(docTokens);
+    const bad = d => segs.some((tk, i) => docHasOrphan(docWrap(tk, availPt, i === 0 ? firstPt : availPt, pt, d)));
+    if (!bad(0)) return 0;
+    for (const d of DOC_SPACING_TRY) if (!bad(d)) return d;
+    return 0;
+  }
+
   // ================= HTML 版面 → 真正的 .docx（所有 Word 匯出共用） =================
   // 產生器照舊組 HTML，這裡把它翻成 Office Open XML，打包成標準 Word 檔，不再是「網頁假裝成 .doc」。
   const H2D_FONT_MAP = {
@@ -932,7 +995,9 @@
   function h2dCtx(el, parent) {
     const st = h2dStyle(el);
     const c = { ...parent };
-    if (st['font-size']) c.pt = h2dFontPt(st['font-size'], parent.pt);
+    if (el.getAttribute && el.getAttribute('data-v2')) c.v2 = true;
+    if (c.v2) c.pt = DOC_PT;
+    else if (st['font-size']) c.pt = h2dFontPt(st['font-size'], parent.pt);
     if (st['font-family']) c.font = h2dFonts(st['font-family'], parent.font);
     if (st['font-weight']) c.bold = /bold|[6-9]00/.test(st['font-weight']);
     const tag = (el.tagName || '').toLowerCase();
@@ -949,12 +1014,13 @@
     m = /^#([0-9a-f]{6})$/i.exec(s);
     return m ? m[1].toUpperCase() : null;
   }
-  function h2dRun(text, c, isBreak) {
+  function h2dRun(text, c, isBreak, spTw) {
     const f = c.font;
     const color = h2dHex(c.color);
-    const rPr = `<w:rPr><w:rFonts w:ascii="${H2D_LATIN}" w:hAnsi="${H2D_LATIN}" w:eastAsia="${h2dX(f.ea)}" w:cs="${H2D_LATIN}"/>`
+    const rPr = `<w:rPr><w:rFonts w:ascii="${H2D_LATIN}" w:hAnsi="${H2D_LATIN}" w:eastAsia="${h2dX(c.v2 ? DOC_CJK : f.ea)}" w:cs="${H2D_LATIN}"/>`
       + (c.bold ? '<w:b/><w:bCs/>' : '') + (c.italic ? '<w:i/><w:iCs/>' : '')
       + (color && color !== '000000' ? `<w:color w:val="${color}"/>` : '')
+      + (spTw ? `<w:spacing w:val="${spTw}"/>` : '')
       + `<w:sz w:val="${Math.round(c.pt * 2)}"/><w:szCs w:val="${Math.round(c.pt * 2)}"/></w:rPr>`;
     return isBreak ? `<w:r>${rPr}<w:br/></w:r>` : `<w:r>${rPr}<w:t xml:space="preserve">${h2dX(text)}</w:t></w:r>`;
   }
@@ -968,7 +1034,18 @@
       // 去掉段首段尾的空白
       while (runs.length && runs[0].ws) runs.shift();
       while (runs.length && runs[runs.length - 1].ws) runs.pop();
-      if (runs.length) out.push(h2dPara(runs.map(r => r.xml).join(''), ctx, pOpts));
+      if (runs.length) {
+        let spTw = 0;
+        if (ctx.v2 && ctx.boxTw) {
+          const o = pOpts || {};
+          const availPt = (ctx.boxTw - (o.left || 0) - (o.right || 0)) / 20;
+          const firstPt = availPt - (o.first || 0) / 20;
+          const segs = [''];
+          runs.forEach(r => { if (r.br) segs.push(''); else segs[segs.length - 1] += r.text; });
+          spTw = Math.round(docAntiOrphan(segs, availPt, firstPt) * 20);
+        }
+        out.push(h2dPara(runs.map(r => h2dRun(r.text, r.c, r.br, spTw)).join(''), ctx, pOpts));
+      }
       runs = [];
     };
     const walkInline = (n, c) => {
@@ -976,11 +1053,11 @@
         if (ch.nodeType === 3) {
           const t = ch.nodeValue.replace(/[ \t\r\n\f]+/g, ' ');   // 保留 &nbsp;
           if (!t) return;
-          if (t === ' ') { if (runs.length && !runs[runs.length - 1].ws) runs.push({ ws: true, xml: h2dRun(' ', c) }); return; }
-          runs.push({ xml: h2dRun(t, c) });
+          if (t === ' ') { if (runs.length && !runs[runs.length - 1].ws) runs.push({ ws: true, text: ' ', c }); return; }
+          runs.push({ text: t, c });
         } else if (ch.nodeType === 1) {
           const tag = ch.tagName.toLowerCase();
-          if (tag === 'br') { runs.push({ xml: h2dRun('', c, true) }); return; }
+          if (tag === 'br') { runs.push({ text: '', c, br: true }); return; }
           if (['p', 'div', 'table', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li'].includes(tag)) {
             flush();
             out.push(...h2dElement(ch, c));
@@ -995,13 +1072,13 @@
     return out;
   }
   function h2dPara(runsXml, c, o = {}) {
-    const jc = H2D_JC[c.align] || null;
+    const jc = H2D_JC[c.align] || (c.v2 ? 'both' : null);
     const ind = [];
     if (o.left) ind.push(`w:left="${o.left}"`);
     if (o.right) ind.push(`w:right="${o.right}"`);
     if (o.first > 0) ind.push(`w:firstLine="${o.first}"`);
     if (o.first < 0) ind.push(`w:hanging="${-o.first}"`);
-    return `<w:p><w:pPr><w:spacing w:before="${Math.max(0, o.before || 0)}" w:after="${Math.max(0, o.after || 0)}" w:line="240" w:lineRule="auto"/>`
+    return `<w:p><w:pPr><w:spacing w:before="${Math.max(0, o.before || 0)}" w:after="${Math.max(0, o.after || 0)}" ${c.v2 ? `w:line="${DOC_LINE_PT * 20}" w:lineRule="exact"` : 'w:line="240" w:lineRule="auto"'}/>`
       + (ind.length ? `<w:ind ${ind.join(' ')}/>` : '')
       + (jc ? `<w:jc w:val="${jc}"/>` : '')
       + `</w:pPr>${runsXml}</w:p>`;
@@ -1087,7 +1164,7 @@
       if (landscape && pgW < pgH) [pgW, pgH] = [pgH, pgW];
     }
     const root = doc.querySelector('.WordSection1') || doc.body;
-    const baseCtx = h2dCtx(doc.body, { pt: 12, font: { ascii: '新細明體', ea: '新細明體' }, bold: false, italic: false, align: null, indent: 0 }).c;
+    const baseCtx = h2dCtx(doc.body, { pt: 12, font: { ascii: '新細明體', ea: '新細明體' }, bold: false, italic: false, align: null, indent: 0, boxTw: pgW - mar[1] - mar[3] }).c;
     const bodyCtx = root === doc.body ? baseCtx : h2dCtx(root, baseCtx).c;
     const blocks = h2dBlocks(root, bodyCtx, {});
     // 內文最後若是表格，補一個極小的空段落（Word 規定），避免多出空白頁
@@ -1156,9 +1233,9 @@
       const zh = [r.companyZh, [r.nameZh, r.titleZh].filter(Boolean).join('')].filter(Boolean).join(' ');
       const en = [r.nameEn, r.titleEn, r.companyEn].filter(Boolean).join(', ');
       // 編號懸掛縮排：換行時文字對齊在編號後面
-      listHtml += `<p style="font-size:12pt; margin:10px 0 0 2em; text-indent:-2em; font-family:${KAI};">${i + 1}.&nbsp;&nbsp;${esc(zh)}</p>`;
+      listHtml += `<p style="font-size:16pt; margin:10px 0 0 32pt; text-indent:-32pt; font-family:${KAI};">${i + 1}.&nbsp;&nbsp;${esc(zh)}</p>`;
       if (en) {
-        listHtml += `<p style="font-size:12pt; margin:6px 0 0 2em; font-family:'Times New Roman',${KAI};">${esc(en)}</p>`;
+        listHtml += `<p style="font-size:14pt; margin:6px 0 0 32pt; font-family:'Times New Roman',${KAI};">${esc(en)}</p>`;
       }
     });
 
@@ -1173,8 +1250,8 @@
       </head>
       <body style="font-family:${KAI};">
         <div class="WordSection1">
-        <p style="text-align:center; font-size:16pt; font-weight:bold; margin:0; font-family:${KAI};">${esc(title)}</p>
-        <p style="text-align:center; font-size:16pt; font-weight:bold; margin:2px 0 0; font-family:${KAI};">揭幕貴賓名單</p>
+        <p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin:0; font-family:${KAI};">${esc(title)}</p>
+        <p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin:2px 0 0; font-family:${KAI};">揭幕貴賓名單</p>
         <p style="text-align:right; font-size:10pt; color:#0000CC; margin:8px 0 4px; font-family:${KAI};">${esc(updLine)}</p>
         ${listHtml}
         </div>
@@ -1206,8 +1283,8 @@
 
       colgroupHtml += `<col style="width:${colWidth};">`;
       numHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:20px; font-weight:bold; padding:8px; width:${colWidth};">${rank}</td>`;
-      nameHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'PMingLiU','Microsoft JhengHei',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${nameLine}</td>`;
-      companyHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'PMingLiU','Microsoft JhengHei',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${companyLine}</td>`;
+      nameHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'DFKai-SB','標楷體','BiauKai',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${nameLine}</td>`;
+      companyHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'DFKai-SB','標楷體','BiauKai',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${companyLine}</td>`;
     });
 
     const html = `
@@ -1219,10 +1296,10 @@
           div.WordSection1 { page:WordSection1; }
         </style>
       </head>
-      <body style="font-family:'PMingLiU','Microsoft JhengHei',serif;">
+      <body style="font-family:'DFKai-SB','標楷體','BiauKai',serif;">
         <div class="WordSection1">
-        ${examTitle ? `<p style="text-align:center; font-size:16pt; font-weight:bold; margin-bottom:2px; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(examTitle)}</p>` : ''}
-        <p style="text-align:center; font-size:16pt; font-weight:bold; margin-top:0; font-family:'DFKai-SB','標楷體','BiauKai',serif;">貴賓揭幕站位圖</p>
+        ${examTitle ? `<p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin-bottom:2px; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(examTitle)}</p>` : ''}
+        <p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin-top:0; font-family:'DFKai-SB','標楷體','BiauKai',serif;">貴賓揭幕站位圖</p>
         ${UPDATE_STAMP_HTML()}
         <table align="center" style="width:${tableWidth}; table-layout:fixed; border-collapse:collapse; margin:12px auto 0;" cellpadding="0" cellspacing="0">
           <colgroup>${colgroupHtml}</colgroup>
@@ -1305,7 +1382,7 @@
     ws.mergeCells(5, 1, 5, n);
     const t4 = ws.getCell(5, 1);
     t4.value = '背板';
-    t4.font = { name: 'Microsoft JhengHei', size: 12, bold: true };
+    t4.font = { name: '標楷體', size: 12, bold: true };
     t4.fill = grayFill;
     t4.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(5).height = 22;
@@ -1328,15 +1405,15 @@
       if (hl) cNum.fill = orangeFill;
 
       const cName = ws.getCell(7, col);
-      cName.value = mix(vert(r ? `${r.nameZh || ''}${r.titleZh || ''}` : ''), 'Microsoft JhengHei', { size: 14 });
-      cName.font = { name: 'Microsoft JhengHei', size: 14 };
+      cName.value = mix(vert(r ? `${r.nameZh || ''}${r.titleZh || ''}` : ''), '標楷體', { size: 14 });
+      cName.font = { name: '標楷體', size: 14 };
       cName.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
       cName.border = allBorder;
       if (hl) cName.fill = orangeFill;
 
       const cCo = ws.getCell(8, col);
-      cCo.value = mix(vert(r ? (r.companyZh || '') : ''), 'Microsoft JhengHei', { size: 14 });
-      cCo.font = { name: 'Microsoft JhengHei', size: 14 };
+      cCo.value = mix(vert(r ? (r.companyZh || '') : ''), '標楷體', { size: 14 });
+      cCo.font = { name: '標楷體', size: 14 };
       cCo.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
       cCo.border = allBorder;
       if (hl) cCo.fill = orangeFill;
@@ -1568,13 +1645,13 @@
       </head>
       <body style="font-family:${KAI};">
         <div class="WordSection1">
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0; font-family:${KAI};">開幕典禮</p>
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:${KAI};">${esc(thirdTitle)}</p>
-        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(timeLine)}</p>
-        ${timeLineEn ? `<p style="font-size:13pt; margin:2px 0 2px 3em; font-family:'Times New Roman',${KAI};">${esc(timeLineEn)}</p>` : ''}
-        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(placeLine)}</p>
-        ${placeLineEn ? `<p style="font-size:13pt; margin:2px 0 2px 3em; font-family:'Times New Roman',${KAI};">${esc(placeLineEn)}</p>` : ''}
+        <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
+        <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0; font-family:${KAI};">開幕典禮</p>
+        <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:${KAI};">${esc(thirdTitle)}</p>
+        <p data-v2="1" style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(timeLine)}</p>
+        ${timeLineEn ? `<p data-v2="1" style="font-size:13pt; margin:2px 0 2px 3em; font-family:'Times New Roman',${KAI};">${esc(timeLineEn)}</p>` : ''}
+        <p data-v2="1" style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(placeLine)}</p>
+        ${placeLineEn ? `<p data-v2="1" style="font-size:13pt; margin:2px 0 2px 3em; font-family:'Times New Roman',${KAI};">${esc(placeLineEn)}</p>` : ''}
         <p style="font-size:14pt; margin:2px 0 6px; text-align:right; font-family:${KAI};">${esc(genTimeLine)}</p>
         <table align="center" style="width:16.7cm; table-layout:fixed; border-collapse:collapse; margin:6px auto 0;" cellpadding="0" cellspacing="0">
           <colgroup><col style="width:3.2cm;"><col style="width:13.5cm;"></colgroup>
@@ -1728,9 +1805,9 @@
       const r = s.record;
       const zhLine = `${i + 1}. ${[r.companyZh, [r.nameZh, r.titleZh].filter(Boolean).join('')].filter(Boolean).join(' ')}`;
       const enParts = [r.nameEn, r.titleEn, r.companyEn].filter(Boolean).join(', ');
-      listHtml += `<p style="font-size:14pt; margin:12px 0 0; font-family:${KAI};">${esc(zhLine)}</p>`;
+      listHtml += `<p style="font-size:16pt; margin:12px 0 0; font-family:${KAI};">${esc(zhLine)}</p>`;
       if (enParts) {
-        listHtml += `<p style="font-size:12pt; margin:4px 0 0 1.6em; font-family:'Times New Roman',${KAI};">${esc(enParts)}</p>`;
+        listHtml += `<p style="font-size:14pt; margin:4px 0 0 1.6em; font-family:'Times New Roman',${KAI};">${esc(enParts)}</p>`;
       }
     });
 
@@ -1745,8 +1822,8 @@
       </head>
       <body style="font-family:${KAI};">
         <div class="WordSection1">
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 14px; font-family:${KAI};">開幕典禮唱名貴賓名單</p>
+        <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
+        <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 14px; font-family:${KAI};">開幕典禮唱名貴賓名單</p>
         ${UPDATE_STAMP_HTML()}
         ${listHtml}
         </div>
@@ -2543,10 +2620,10 @@
       </head>
       <body style="font-family:${KAI};">
         <div class="WordSection1">
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
-        <p style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:${KAI};">開幕典禮  接待計畫</p>
-        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(timeLine)}</p>
-        <p style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(placeLine)}</p>
+        <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
+        <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:${KAI};">開幕典禮  接待計畫</p>
+        <p data-v2="1" style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(timeLine)}</p>
+        <p data-v2="1" style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(placeLine)}</p>
         ${posLine ? `<p style="font-size:14pt; font-weight:bold; margin:2px 0; text-align:right; font-family:${KAI};">${esc(posLine)}</p>` : ''}
         <p style="font-size:12pt; margin:2px 0 6px; text-align:right; font-family:${KAI};">${esc(genTimeLine)}</p>
         <table align="center" style="width:18.8cm; table-layout:fixed; border-collapse:collapse; margin:6px auto 0;" cellpadding="0" cellspacing="0">
@@ -2974,7 +3051,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表</h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V4</span></h1>
         <div class="subtitle">Executive Bilingual Directory</div>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
