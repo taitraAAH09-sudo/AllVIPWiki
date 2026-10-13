@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V4</title>
+<title>長官中英一覽表 V7</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -2878,6 +2878,32 @@
     min-height: 100vh;
     padding: 36px 24px 60px;
   }
+
+  /* ── V5：瀏覽器儲存空間監測（整個 taitraaah09-sudo.github.io 共用） ── */
+  .sm{display:inline-block;position:relative;margin:0 0 12px;font-size:12.5px;color:var(--ink-soft);}
+  .sm-pill{display:inline-flex;align-items:center;gap:10px;padding:7px 12px;background:#fff;
+    border:1px solid var(--paper-line);border-radius:999px;cursor:pointer;font:inherit;color:inherit;}
+  .sm-pill:hover{border-color:var(--gold-light);}
+  .sm-bar{width:120px;height:6px;border-radius:3px;background:var(--paper-line);overflow:hidden;}
+  .sm-bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .3s;}
+  .sm.warn .sm-bar i{background:var(--warn);} .sm.danger .sm-bar i{background:var(--danger);}
+  .sm.danger .sm-pill{border-color:var(--danger);color:var(--danger);font-weight:700;}
+  .sm-clean{margin-left:6px;padding:7px 12px;background:#fff;border:1px solid var(--paper-line);border-radius:999px;
+    font:inherit;font-size:12.5px;color:var(--ink-soft);cursor:pointer;vertical-align:middle;}
+  .sm-clean:hover{border-color:var(--gold-light);color:var(--ink);}
+  .sm.danger .sm-clean{border-color:var(--danger);color:var(--danger);font-weight:700;}
+  .sm-num{font-variant-numeric:tabular-nums;color:var(--ink);}
+  .sm-panel{display:none;position:absolute;left:0;top:100%;z-index:50;width:min(520px,calc(100vw - 48px));margin-top:8px;padding:12px 14px;background:#fff;border:1px solid var(--paper-line);
+    border-radius:10px;max-width:520px;box-shadow:0 4px 16px rgba(28,43,58,.08);}
+  .sm.open .sm-panel{display:block;}
+  .sm-panel table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .sm-panel td{padding:5px 4px;border-bottom:1px solid var(--paper-line);vertical-align:middle;}
+  .sm-panel td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink);}
+  .sm-panel td.k{color:var(--ink-soft);font-family:"Courier New",monospace;font-size:11.5px;word-break:break-all;}
+  .sm-panel .sm-note{margin-top:8px;line-height:1.6;}
+  .sm-del{font:inherit;font-size:11.5px;padding:2px 8px;border:1px solid var(--danger);color:var(--danger);
+    background:#fff;border-radius:6px;cursor:pointer;}
+  .sm-del:hover{background:var(--danger);color:#fff;}
   .wrap { max-width: 860px; margin: 0 auto; padding-right: 24px; box-sizing: border-box; }
 
   .header {
@@ -3047,11 +3073,19 @@
 </head>
 <body>
   <div class="wrap">
+    <div class="sm" id="sm">
+      <button type="button" class="sm-pill" id="sm-pill" title="輸入密碼後可看各工具用了多少">
+        <span>💾 瀏覽器空間</span><span class="sm-bar"><i id="sm-fill"></i></span>
+        <span class="sm-num" id="sm-num">計算中…</span>
+      </button>
+      <button type="button" class="sm-clean" id="sm-clean" title="只清各工具的快取（名稱有 cache 的），不會動到任何紀錄或設定">🧹 清除快取</button>
+      <div class="sm-panel" id="sm-panel"></div>
+    </div>
     <div id="directory-view">
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V4</span></h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V7</span></h1>
         <div class="subtitle">Executive Bilingual Directory</div>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
@@ -3388,5 +3422,114 @@
       </form>
     </div>
   </div>
+<script>
+/* ── V5：瀏覽器儲存空間監測 ──
+   localStorage 是 taitraaah09-sudo.github.io 底下所有工具共用（約 10MB）。
+   滿了以後 Firebase 寫不進連線紀錄，所有 Firebase 工具會一起卡住。只量這台電腦、這個瀏覽器。 */
+(function(){
+  const LIMIT_CH=5242880;   // Chrome：每個網站約 500 萬字元（≈10MB）
+  const MAP=[
+    [/^kawei_/,'法人卡位選股台'],[/^twstk/,'盤後選股台'],[/^taitraExpoDesk/,'展務資訊統整台'],
+    [/^trumpcalls/,'川普點名台'],[/^(easy_reco|test_track|sim_trades)/,'選股追蹤紀錄'],
+    [/^mofa_/,'駐臺使節名單校對'],[/^teleprompter/,'提詞機'],[/^firebase:/,'Firebase 連線紀錄'],
+    [/^(dossier|snap:)/,'活動專卷'],[/^gurus/,'處內主管出席一覽表'],[/^(stage|sched|theaterZoom)/,'舞台排程'],
+    [/^(pk_|tour_|schedTour)/,'開幕巡場產出'],[/^(cer|vip)/,'長官中英一覽表']
+  ];
+  const $=id=>document.getElementById(id);
+  const kb=ch=>ch*2/1024, fmt=k=>k>=1024?(k/1024).toFixed(1)+' MB':Math.round(k)+' KB';
+  const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  let idbTxt='';
+  function scan(){
+    let total=0; const groups={};
+    try{
+      for(let i=0;i<localStorage.length;i++){
+        const k=localStorage.key(i); const v=localStorage.getItem(k)||''; const ch=k.length+v.length;
+        total+=ch;
+        const hit=MAP.find(([r])=>r.test(k)); const name=hit?hit[1]:'其他小設定';
+        (groups[name]=groups[name]||{ch:0,keys:[]}).ch+=ch; groups[name].keys.push([k,ch]);
+      }
+    }catch(e){ return {err:e.message}; }
+    return {total,groups};
+  }
+  function paint(){
+    const r=scan(), box=$('sm');
+    if(r.err){ $('sm-num').textContent='無法讀取（'+r.err+'）'; return; }
+    const pct=Math.min(100,r.total/LIMIT_CH*100);
+    $('sm-fill').style.width=pct.toFixed(1)+'%';
+    $('sm-num').textContent=fmt(kb(r.total))+' / 10 MB（'+Math.round(pct)+'%）'+(pct>=80?'　快滿了，點開清理':'');
+    box.classList.toggle('warn',pct>=60&&pct<80); box.classList.toggle('danger',pct>=80);
+    const rows=Object.entries(r.groups).sort((a,b)=>b[1].ch-a[1].ch).map(([name,g])=>{
+      const big=g.keys.filter(([k,ch])=>/cache/i.test(k)&&kb(ch)>=50).sort((a,b)=>b[1]-a[1]);
+      return '<tr><td>'+esc(name)+'</td><td class="n">'+fmt(kb(g.ch))+'</td><td></td></tr>'+
+        big.map(([k,ch])=>'<tr><td class="k">　└ '+esc(k)+'</td><td class="n">'+fmt(kb(ch))+'</td>'+
+          '<td style="text-align:right"><button class="sm-del" data-k="'+esc(k)+'">清除快取</button></td></tr>').join('');
+    }).join('');
+    $('sm-panel').innerHTML='<table>'+rows+'</table><div class="sm-note">'+
+      '這是 <b>taitraaah09-sudo.github.io</b> 底下所有工具共用的空間，只算<b>這台電腦、這個瀏覽器</b>，不是 Firebase 雲端用量。<br>'+
+      '超過 80% 請清理；滿了 Firebase 工具（專卷、Gurus、舞台排程…）會連不上。名稱有 cache 的是快取，清掉會自動重抓。'+
+      (idbTxt?'<br>'+idbTxt:'')+'</div>';
+  }
+  /* V6：點開明細要密碼（同一個分頁輸入一次即可） */
+  const SM_PW='1470', SM_OK='smUnlocked';
+  $('sm-pill').onclick=()=>{
+    const box=$('sm');
+    if(box.classList.contains('open')){ box.classList.remove('open'); return; }
+    let ok=false; try{ ok=sessionStorage.getItem(SM_OK)==='1'; }catch(e){}
+    if(!ok){
+      const pw=prompt('請輸入密碼查看儲存空間明細');
+      if(pw===null) return;
+      if(pw.trim()!==SM_PW){ alert('密碼錯誤'); return; }
+      try{ sessionStorage.setItem(SM_OK,'1'); }catch(e){}
+    }
+    box.classList.add('open');
+  };
+  $('sm-panel').addEventListener('click',e=>{
+    const b=e.target.closest('.sm-del'); if(!b) return;
+    const k=b.dataset.k;
+    if(!confirm('清除「'+k+'」？\n這是快取資料，對應的工具下次打開會重新抓（第一次會慢一點）。')) return;
+    try{ localStorage.removeItem(k); }catch(err){}
+    paint();
+  });
+  /* V7：一鍵清除快取 — 只刪名稱有 cache 的項目，紀錄、設定一律不動 */
+  function cacheKeys(){
+    const out=[];
+    try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(/cache/i.test(k)) out.push(k); } }catch(e){}
+    return out;
+  }
+  function cleanCaches(){
+    const ks=cacheKeys(); let freed=0;
+    ks.forEach(k=>{ try{ freed+=k.length+(localStorage.getItem(k)||'').length; localStorage.removeItem(k); }catch(e){} });
+    paint();
+    return {n:ks.length, kb:kb(freed)};
+  }
+  $('sm-clean').onclick=()=>{
+    const ks=cacheKeys();
+    if(!ks.length){ alert('目前沒有快取可以清除。'); return; }
+    if(!confirm('清除這台電腦上各工具的快取？\n\n只會刪除快取（共 '+ks.length+' 項），各工具的紀錄和設定都不會動。\n用到快取的工具（例如選股台）下次打開會重新抓資料，第一次會慢一點。')) return;
+    const r=cleanCaches();
+    alert('已清除 '+r.n+' 項快取，釋出 '+fmt(r.kb)+'。');
+  };
+  /* 自動保護：打開這頁時空間已超過 90%，就自動清快取，避免 Firebase 工具卡住 */
+  (()=>{
+    const r=scan(); if(r.err) return;
+    if(r.total/LIMIT_CH>=0.9){
+      const c=cleanCaches();
+      if(c.n) console.warn('[空間監測] 超過 90%，已自動清除 '+c.n+' 項快取（'+fmt(c.kb)+'）');
+    }
+  })();
+  if(navigator.storage&&navigator.storage.estimate){
+    navigator.storage.estimate().then(est=>{
+      const u=(est.usage||0)/1048576, q=(est.quota||0)/1073741824;
+      if(!est.quota) return;
+      idbTxt='另外，IndexedDB 等大容量空間（專卷截圖等）用了 '+u.toFixed(1)+' MB，上限約 '+q.toFixed(0)+' GB，不會跟上面搶空間。';
+      paint();
+    }).catch(()=>{});
+  }
+  paint();
+  setInterval(()=>{ if(!document.hidden) paint(); },30000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) paint(); });
+  addEventListener('storage',paint);   // 其他分頁寫入時也會更新
+})();
+</script>
 </body>
 </html>
