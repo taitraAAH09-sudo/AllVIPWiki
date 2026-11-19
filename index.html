@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V9</title>
+<title>長官中英一覽表 V10</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -2880,16 +2880,16 @@
   }
 
   /* ── V5：瀏覽器儲存空間監測（整個 taitraaah09-sudo.github.io 共用） ── */
-  .sm{display:inline-block;position:relative;margin:0 0 12px;font-size:12.5px;color:var(--ink-soft);}
-  .sm-pill{display:inline-flex;align-items:center;gap:10px;padding:7px 12px;background:#fff;
+  .sm{display:inline-block;position:relative;margin:0 0 8px;font-size:11px;color:var(--ink-soft);}
+  .sm-pill{display:inline-flex;vertical-align:middle;align-items:center;gap:6px;padding:3px 9px;background:#fff;
     border:1px solid var(--paper-line);border-radius:999px;cursor:pointer;font:inherit;color:inherit;}
   .sm-pill:hover{border-color:var(--gold-light);}
-  .sm-bar{width:120px;height:6px;border-radius:3px;background:var(--paper-line);overflow:hidden;}
+  .sm-bar{width:70px;height:4px;border-radius:3px;background:var(--paper-line);overflow:hidden;}
   .sm-bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .3s;}
   .sm.warn .sm-bar i{background:var(--warn);} .sm.danger .sm-bar i{background:var(--danger);}
   .sm.danger .sm-pill{border-color:var(--danger);color:var(--danger);font-weight:700;}
-  .sm-clean{margin-left:6px;padding:7px 12px;background:#fff;border:1px solid var(--paper-line);border-radius:999px;
-    font:inherit;font-size:12.5px;color:var(--ink-soft);cursor:pointer;vertical-align:middle;}
+  .sm-clean{margin-left:4px;padding:3px 9px;background:#fff;border:1px solid var(--paper-line);border-radius:999px;
+    font:inherit;font-size:11px;color:var(--ink-soft);cursor:pointer;vertical-align:middle;}
   .sm-clean:hover{border-color:var(--gold-light);color:var(--ink);}
   .sm.danger .sm-clean{border-color:var(--danger);color:var(--danger);font-weight:700;}
   .sm-num{font-variant-numeric:tabular-nums;color:var(--ink);}
@@ -3069,6 +3069,26 @@
     padding: 14px 18px; background: #fbf8f1; border-left: 3px solid var(--gold); border-radius: 2px;
   }
   .note code { background: #efe9da; padding: 1px 5px; border-radius: 2px; font-size: 11px; }
+
+  /* V10：版號旁的「1119改」閃亮標記 */
+  .v-note {
+    position:relative; display:inline-block; margin-left:10px; vertical-align:middle;
+    font-size:12px; font-weight:800; letter-spacing:.08em; line-height:1;
+    padding:4px 10px; border:1px solid var(--gold-light); border-radius:999px;
+    color:transparent;
+    background:linear-gradient(110deg, var(--gold) 0%, var(--gold) 38%, #fff3c4 50%, var(--gold) 62%, var(--gold) 100%);
+    background-size:260% 100%; -webkit-background-clip:text; background-clip:text;
+    animation:vnShine 2.2s linear infinite;
+  }
+  .v-note::before, .v-note::after {
+    content:'✦'; position:absolute; color:#e2b84f; pointer-events:none;
+    animation:vnTwinkle 1.6s ease-in-out infinite;
+  }
+  .v-note::before { top:-7px; right:-5px; font-size:10px; }
+  .v-note::after  { bottom:-6px; left:-4px; font-size:7px; animation-delay:.8s; }
+  @keyframes vnShine { from { background-position:100% 0; } to { background-position:-60% 0; } }
+  @keyframes vnTwinkle { 0%,100% { opacity:0; transform:scale(.4) rotate(0deg); } 50% { opacity:1; transform:scale(1.15) rotate(90deg); } }
+  @media (prefers-reduced-motion: reduce) { .v-note, .v-note::before, .v-note::after { animation:none; } .v-note::before, .v-note::after { opacity:1; } }
 </style>
 </head>
 <body>
@@ -3085,8 +3105,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V9</span></h1>
-        <div class="subtitle">Executive Bilingual Directory</div>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V10</span><span class="v-note">1119改</span></h1>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
         <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
@@ -3127,10 +3146,6 @@
       <div class="empty-sub">點擊右上角「新增」建立第一筆資料</div>
     </div>
 
-    <div class="note">
-      <strong>連接你自己的 Firebase：</strong>打開檔案原始碼，找到 <code>firebaseConfig</code>，
-      貼上 Firebase Console 取得的設定即可。未連接前為示範模式，重新整理頁面資料會消失。
-    </div>
     </div>
 
     <!-- 專卷資料產生器 -->
