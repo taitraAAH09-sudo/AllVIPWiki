@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V10</title>
+<title>長官中英一覽表 V11</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -413,6 +413,7 @@
   const genPwModal = document.getElementById('gen-pw-modal');
   const genPwInput = document.getElementById('gen-pw-input');
   function openGenerator() {
+    document.body.classList.add('gen-mode');
     directoryView.style.display = 'none';
     generatorView.style.display = 'block';
     genSearchInput.value = '';
@@ -467,6 +468,7 @@
     if (e.key === 'Escape') closeGenPwModal();
   });
   genBackBtn.addEventListener('click', () => {
+    document.body.classList.remove('gen-mode');
     generatorView.style.display = 'none';
     directoryView.style.display = 'block';
   });
@@ -564,14 +566,71 @@
         <div class="info">
           <div class="info__company">${esc(s.record.companyZh)}</div>
           <div class="info__name">${esc(line2)}</div>
+          ${lineupSplit ? `<div class="batch-no">${esc(lineupBatchNo(s))}</div>` : ''}
         </div>
+        ${lineupSplit ? `<div class="batch-btns">${LINEUP_BATCH_OPTS.map(o => `<button class="batch-btn ${(s.batch || 'both') === o.k ? 'batch-btn--on' : ''}" data-k="${o.k}">${o.t}</button>`).join('')}</div>` : ''}
         <button class="delete-btn" title="移除">✕</button>
       `;
+      item.querySelectorAll('.batch-btn').forEach(b => b.addEventListener('click', () => { s.batch = b.dataset.k; renderGenSelectedList(); }));
       item.querySelector('.delete-btn').addEventListener('click', () => toggleSelect(s.record));
       attachDragHandlers(item);
       genSelectedEl.appendChild(item);
     });
+    renderLineupResults();
   }
+
+  // ===== TEST：站位分兩梯次（第一梯 揭幕、第二梯 合影）=====
+  let lineupSplit = false;
+  const LINEUP_BATCH_OPTS = [{ k: 'both', t: '揭幕＋合影' }, { k: 'unveil', t: '只揭幕' }, { k: 'photo', t: '只合影' }];
+  function lineupBatches() {
+    if (!lineupSplit) return [{ key: 'all', label: '', list: selectedOfficers.slice() }];
+    return [
+      { key: 'unveil', label: '第一梯　揭幕', list: selectedOfficers.filter(s => (s.batch || 'both') !== 'photo') },
+      { key: 'photo', label: '第二梯　合影', list: selectedOfficers.filter(s => (s.batch || 'both') !== 'unveil') }
+    ];
+  }
+  function lineupUnveilList() { return lineupSplit ? lineupBatches()[0].list : selectedOfficers.slice(); }
+  function lineupBatchNo(s) {
+    return lineupBatches().map(b => { const i = b.list.indexOf(s); return i >= 0 ? b.label.replace(/^.*　/, '') + ' ' + (i + 1) + ' 號' : ''; }).filter(Boolean).join('・');
+  }
+  function paintSplitBtn() {
+    const b = document.getElementById('lineup-split-btn');
+    b.classList.toggle('split-btn--on', lineupSplit);
+    b.textContent = lineupSplit ? '✓ 分兩梯次（揭幕／合影）' : '分兩梯次';
+    document.getElementById('lineup-sub-h').textContent = lineupSplit ? '站位順序（每位選他在哪一梯；號碼各梯分開算）' : '站位順序';
+  }
+  document.getElementById('lineup-split-btn').addEventListener('click', () => {
+    lineupSplit = !lineupSplit; paintSplitBtn(); renderGenSelectedList();
+  });
+
+  // ===== TEST：站位自己的搜尋（只加進站位／照片，不動程序表、唱名）=====
+  function renderLineupResults() {
+    const box = document.getElementById('lineup-results'), inp = document.getElementById('lineup-search-input');
+    if (!box || !inp) return;
+    const kw = inp.value.trim().toLowerCase();
+    box.innerHTML = '';
+    if (!kw) return;
+    const hits = allRecords.filter(r => [r.companyZh, r.companyEn, r.nameZh, r.nameEn, r.titleZh, r.titleEn].filter(Boolean).join(' ').toLowerCase().includes(kw));
+    if (!hits.length) { box.innerHTML = '<div class="empty-state" style="padding:18px;"><div class="empty-sub">找不到符合的資料</div></div>'; return; }
+    hits.forEach(r => {
+      const idx = selectedOfficers.findIndex(s => s.record.id === r.id);
+      const row = document.createElement('div');
+      row.className = 'card-row';
+      row.innerHTML = `
+        <div class="avatar">${r.photo ? `<img src="${r.photo}" alt="">` : `<span>${esc((r.nameZh || r.companyZh || '?')[0])}</span>`}</div>
+        <div class="info"><div class="info__company">${esc(r.companyZh)}</div><div class="info__name">${esc([r.nameZh, r.titleZh].filter(Boolean).join('　'))}</div></div>
+        <button class="gen-pick-btn ${idx >= 0 ? 'gen-pick-btn--active' : ''}">${idx >= 0 ? (idx + 1) : '＋'}</button>`;
+      row.querySelector('.gen-pick-btn').addEventListener('click', () => {
+        const i = selectedOfficers.findIndex(s => s.record.id === r.id);
+        if (i >= 0) selectedOfficers.splice(i, 1);
+        else selectedOfficers.push({ order: selectedOfficers.length + 1, record: r, batch: 'both' });
+        selectedOfficers.forEach((s, k) => s.order = k + 1);
+        renderGenResults();
+      });
+      box.appendChild(row);
+    });
+  }
+  document.getElementById('lineup-search-input').addEventListener('input', renderLineupResults);
 
   // ---------- 拖曳排序 ----------
   let dragSrcIndex = null;
@@ -646,7 +705,7 @@
     return { mime: m[1], ext, base64: m[2], w: img.naturalWidth || 1, h: img.naturalHeight || 1 };
   }
 
-  genGenerateBtn.addEventListener('click', async () => {
+  async function downloadPhotoDocx() {
     if (selectedOfficers.length === 0) {
       alert("請至少選擇一位貴賓再產生文件");
       return;
@@ -819,6 +878,39 @@
       genGenerateBtn.disabled = false;
       genGenerateBtn.textContent = btnText;
     }
+  }
+
+  // TEST：照片表先預覽（版面同 Word：文字 5.13cm＋照片 3.99cm，兩人一列）
+  genGenerateBtn.addEventListener('click', () => {
+    if (selectedOfficers.length === 0) { alert("請至少選擇一位貴賓再預覽"); return; }
+    const title = genTitleInput.value.trim() || "貴賓合影照片";
+    const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
+    const td = 'border:1px solid #000; padding:5px 7px; vertical-align:top; font-size:11pt;';
+    let rows = '';
+    for (let i = 0; i < selectedOfficers.length; i += 2) {
+      rows += '<tr>';
+      for (let j = i; j < i + 2; j++) {
+        const s = selectedOfficers[j];
+        if (!s) { rows += `<td style="${td}"></td><td style="${td}"></td>`; continue; }
+        const r = s.record;
+        const pic = r.photo ? `<img src="${r.photo}" style="max-width:3.6cm; max-height:3.8cm; display:block; margin:0 auto;">`
+          : '<div style="width:3.6cm; height:3.8cm; margin:0 auto; background:#eee;"></div>';
+        rows += `<td style="${td}"><div style="margin-bottom:4px;">${s.order}. ${esc(r.companyZh || '')}</div><div style="font-weight:bold;">${esc((r.nameZh || '') + (r.titleZh || ''))}</div></td>`
+          + `<td style="${td} vertical-align:middle; text-align:center;">${pic}</td>`;
+      }
+      rows += '</tr>';
+    }
+    const html = `<html><head><meta charset="utf-8"><title>${esc(title)}</title></head>
+      <body style="font-family:'Times New Roman',${KAI};"><div class="WordSection1">
+        <p style="text-align:center; font-size:16pt; font-weight:bold; margin:0 0 4px; font-family:${KAI};">${esc(title)}</p>
+        <p style="text-align:right; font-size:10pt; color:#0000CC; margin:0 0 6px; font-family:${KAI};">${esc(getUpdateStamp())}</p>
+        <table style="width:18.24cm; table-layout:fixed; border-collapse:collapse; margin:0 auto; font-family:'Times New Roman',${KAI};">
+          <colgroup><col style="width:5.13cm"><col style="width:3.99cm"><col style="width:5.13cm"><col style="width:3.99cm"></colgroup>
+          <tr><td colspan="4" style="border:1px solid #000; background:#ccc; text-align:center; font-weight:bold; font-size:12pt; padding:6px;">合影貴賓</td></tr>
+          ${rows}
+        </table>
+      </div></body></html>`;
+    previewDoc('合影貴賓照片', html, [{ label: '⬇ 下載 Word', fn: downloadPhotoDocx }]);
   });
 
   // ---------- 檔名用的時間戳記（以電腦本機時間為準） ----------
@@ -1216,6 +1308,53 @@
     saveBlobAs(new Blob(['\ufeff', html], { type: mime }), filename);
   }
 
+  // ================= TEST：右邊預覽，確認後再下載（不用產生兩次） =================
+  const pvFrame = document.getElementById('pv-frame');
+  let pvShown = false, pvIsStale = false;
+  const PV_CSS = `<style>
+    html{background:#e7e3da;} body{margin:0 !important; padding:18px 0 28px;}
+    .WordSection1{width:21cm; min-height:29.7cm; margin:0 auto; background:#fff; padding:1.5cm 1cm; box-sizing:border-box; box-shadow:0 2px 14px rgba(28,43,58,.16);}
+  </style>`;
+  function pvFit() {
+    const d = pvFrame.contentDocument; if (!d || !d.body) return;
+    const z = Math.min(1, (pvFrame.clientWidth - 28) / 794);   // 21cm ≈ 794px
+    d.body.style.zoom = z > 0 ? z : 1;
+  }
+  window.addEventListener('resize', pvFit);
+  function previewDoc(label, html, actions) {
+    pvFrame.onload = pvFit;
+    pvFrame.srcdoc = html.includes('</head>') ? html.replace('</head>', PV_CSS + '</head>') : PV_CSS + html;
+    pvFrame.style.display = 'block';
+    document.getElementById('pv-empty').style.display = 'none';
+    document.getElementById('pv-title').textContent = label;
+    const now = new Date();
+    const meta = document.getElementById('pv-meta');
+    meta.textContent = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')} 產生・確認沒問題再下載`;
+    meta.classList.remove('stale');
+    pvShown = true; pvIsStale = false;
+    const box = document.getElementById('pv-actions');
+    box.innerHTML = '';
+    actions.forEach((a, i) => {
+      const b = document.createElement('button');
+      b.className = 'btn' + (i === 0 ? ' btn--primary' : '');
+      b.textContent = a.label;
+      b.addEventListener('click', async () => {
+        if (pvIsStale && !confirm('左邊的內容在預覽之後有改過，這份預覽不是最新的。\n還是要下載這一份嗎？（要最新的請先再按一次預覽）')) return;
+        const t = b.textContent; b.disabled = true; b.textContent = '⏳ 下載中…';
+        try { await a.fn(); } finally { b.disabled = false; b.textContent = t; }
+      });
+      box.appendChild(b);
+    });
+    if (window.innerWidth <= 1100) document.getElementById('gen-preview').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function pvStale() {
+    if (!pvShown || pvIsStale) return;
+    pvIsStale = true;
+    const meta = document.getElementById('pv-meta');
+    meta.textContent = '⚠ 左邊內容有改動，請再按一次預覽';
+    meta.classList.add('stale');
+  }
+
   // ================= 揭幕貴賓名單（Word）：展名 → 揭幕貴賓名單 → 更新日期 → 1. 2. 3.… 中文＋英文 =================
   document.getElementById('gen-unveil-list-btn').addEventListener('click', () => {
     if (selectedOfficers.length === 0) {
@@ -1228,7 +1367,9 @@
     const updLine = getUpdateStamp();
 
     let listHtml = '';
-    selectedOfficers.forEach((s, i) => {
+    const unveilList = lineupUnveilList();
+    if (!unveilList.length) { alert('第一梯（揭幕）目前沒有人'); return; }
+    unveilList.forEach((s, i) => {
       const r = s.record;
       const zh = [r.companyZh, [r.nameZh, r.titleZh].filter(Boolean).join('')].filter(Boolean).join(' ');
       const en = [r.nameEn, r.titleEn, r.companyEn].filter(Boolean).join(', ');
@@ -1258,84 +1399,81 @@
       </body>
       </html>`;
 
-    downloadBlob(html, 'application/msword', `揭幕貴賓名單${getTimestampSuffix()}.doc`);
+    const fn = `揭幕貴賓名單${getTimestampSuffix()}.doc`;
+    previewDoc('揭幕貴賓名單', html, [{ label: '⬇ 下載 Word', fn: () => downloadBlob(html, 'application/msword', fn) }]);
   });
 
-  genLineupWordBtn.addEventListener('click', () => {
-    if (selectedOfficers.length === 0) {
-      alert("請至少選擇一位貴賓再產生站位圖");
-      return;
-    }
-    const examTitle = genTitleInput.value.trim();
-    const n = selectedOfficers.length;
+  // TEST：站位圖依梯次產生（沒分梯＝原本一張；分梯＝第一梯揭幕、第二梯合影各一張）
+  function lineupTableHtml(list, label, gap) {
+    const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
+    const n = list.length;
     const order = computeLineupOrder(n);
     const colWidth = '1.5cm';
-    const tableWidth = (n * 1.5) + 'cm';
-
-    let numHtml = '', nameHtml = '', companyHtml = '';
-    let colgroupHtml = '';
+    let numHtml = '', nameHtml = '', companyHtml = '', colgroupHtml = '';
+    const vcell = `border:1px solid #000; text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:${KAI}; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;`;
     order.forEach(rank => {
-      const s = selectedOfficers[rank - 1];
+      const s = list[rank - 1];
       const r = s ? s.record : null;
-      const highlight = rank === 1 ? 'background:#f5a623;' : '';
-      const nameLine = r ? esc(`${r.nameZh || ''}${r.titleZh || ''}`) : '';
-      const companyLine = r ? esc(r.companyZh || '') : '';
-
+      const hl = rank === 1 ? 'background:#f5a623;' : '';
       colgroupHtml += `<col style="width:${colWidth};">`;
-      numHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:20px; font-weight:bold; padding:8px; width:${colWidth};">${rank}</td>`;
-      nameHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'DFKai-SB','標楷體','BiauKai',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${nameLine}</td>`;
-      companyHtml += `<td style="border:1px solid #000; ${highlight} text-align:center; vertical-align:middle; font-size:16pt; padding:10px 2px; word-break:break-all; width:${colWidth}; font-family:'DFKai-SB','標楷體','BiauKai',serif; writing-mode: tb-rl; layout-flow: vertical; text-orientation: upright; mso-text-orientation: upright;">${companyLine}</td>`;
+      numHtml += `<td style="border:1px solid #000; ${hl} text-align:center; vertical-align:middle; font-size:20px; font-weight:bold; padding:8px; width:${colWidth};">${rank}</td>`;
+      nameHtml += `<td style="${vcell} ${hl}">${r ? esc(`${r.nameZh || ''}${r.titleZh || ''}`) : ''}</td>`;
+      companyHtml += `<td style="${vcell} ${hl}">${r ? esc(r.companyZh || '') : ''}</td>`;
     });
-
-    const html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset="utf-8"><title>貴賓揭幕站位圖</title>
-        <style>
-          @page WordSection1 { size:21cm 29.7cm; margin:1.5cm 1.0cm 1.5cm 1.0cm; mso-page-orientation:portrait; }
-          div.WordSection1 { page:WordSection1; }
-        </style>
-      </head>
-      <body style="font-family:'DFKai-SB','標楷體','BiauKai',serif;">
-        <div class="WordSection1">
-        ${examTitle ? `<p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin-bottom:2px; font-family:'DFKai-SB','標楷體','BiauKai',serif;">${esc(examTitle)}</p>` : ''}
-        <p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin-top:0; font-family:'DFKai-SB','標楷體','BiauKai',serif;">貴賓揭幕站位圖</p>
-        ${UPDATE_STAMP_HTML()}
-        <table align="center" style="width:${tableWidth}; table-layout:fixed; border-collapse:collapse; margin:12px auto 0;" cellpadding="0" cellspacing="0">
+    return (label ? `<p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin:${gap ? '28px' : '8px'} 0 0; font-family:${KAI};">${esc(label)}</p>` : '')
+      + `<table align="center" style="width:${n * 1.5}cm; table-layout:fixed; border-collapse:collapse; margin:10px auto 0;" cellpadding="0" cellspacing="0">
           <colgroup>${colgroupHtml}</colgroup>
           <tr><td colspan="${n}" style="background:#cccccc; padding:8px; font-weight:bold; border:1px solid #000; font-size:14px; text-align:center;">背板</td></tr>
           <tr style="height:0.8cm; mso-height-rule:atleast;">${numHtml}</tr>
           <tr style="height:5.55cm; mso-height-rule:exactly;">${nameHtml}</tr>
           <tr style="height:10.79cm; mso-height-rule:exactly;">${companyHtml}</tr>
-        </table>
+        </table>`;
+  }
+
+  genLineupWordBtn.addEventListener('click', () => {
+    if (selectedOfficers.length === 0) { alert("請至少選擇一位貴賓再產生站位圖"); return; }
+    const batches = lineupBatches().filter(b => b.list.length);
+    if (!batches.length) { alert('兩梯都沒有人'); return; }
+    const examTitle = genTitleInput.value.trim();
+    const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
+    const head = lineupSplit ? '貴賓揭幕／合影站位圖' : '貴賓揭幕站位圖';
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="utf-8"><title>${head}</title>
+        <style>
+          @page WordSection1 { size:21cm 29.7cm; margin:1.5cm 1.0cm 1.5cm 1.0cm; mso-page-orientation:portrait; }
+          div.WordSection1 { page:WordSection1; }
+        </style>
+      </head>
+      <body style="font-family:${KAI};">
+        <div class="WordSection1">
+        ${examTitle ? `<p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(examTitle)}</p>` : ''}
+        <p data-v2="1" style="text-align:center; font-size:16pt; font-weight:bold; margin-top:0; font-family:${KAI};">${head}</p>
+        ${UPDATE_STAMP_HTML()}
+        ${batches.map((b, bi) => lineupTableHtml(b.list, b.label, bi > 0)).join('')}
         </div>
       </body>
       </html>`;
-
-    downloadBlob(html, 'application/msword', `貴賓站位圖${getTimestampSuffix()}.doc`);
+    const fn = `貴賓站位圖${getTimestampSuffix()}.doc`;
+    previewDoc(lineupSplit ? '站位圖（分兩梯）' : '貴賓揭幕站位圖', html, [
+      { label: '⬇ 下載 Word', fn: () => downloadBlob(html, 'application/msword', fn) },
+      { label: '⬇ 下載 Excel', fn: () => genLineupExcelBtn.click() }
+    ]);
   });
 
   genLineupExcelBtn.addEventListener('click', async () => {
-    if (selectedOfficers.length === 0) {
-      alert("請至少選擇一位貴賓再產生站位圖");
-      return;
-    }
-    // 產生真正的 .xlsx（ExcelJS），避免 Excel 跳出「檔案格式與副檔名不相符」警告
+    if (selectedOfficers.length === 0) { alert("請至少選擇一位貴賓再產生站位圖"); return; }
+    const batches = lineupBatches().filter(b => b.list.length);
+    if (!batches.length) { alert('兩梯都沒有人'); return; }
+    // 產生真正的 .xlsx（ExcelJS）；分梯時一梯一個工作表
     const examTitle = genTitleInput.value.trim();
-    const n = selectedOfficers.length;
-    const order = computeLineupOrder(n);
-
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('站位圖');
-    ws.columns = Array.from({ length: n }, () => ({ width: 12 })); // 欄寬 12
-
     const thin = { style: 'thin', color: { argb: 'FF000000' } };
     const allBorder = { top: thin, left: thin, bottom: thin, right: thin };
     const orangeFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5A623' } };
     const grayFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCCCCC' } };
-    // 直式文字：每個字換一行 + 自動換行（CJK 直書）
     const vert = s => (s || '').split('').filter(ch => !/\s/.test(ch)).join('\n');
-    // 同一格內中英分段：英文（半形字元）用 Times New Roman，中文用指定字型
     const mix = (text, cjkFont, opts = {}) => {
       const runs = [];
       String(text ?? '').split('').forEach(ch => {
@@ -1348,88 +1486,146 @@
       });
       return runs.length ? { richText: runs } : '';
     };
-
-    // 列1：展覽名稱
-    ws.mergeCells(1, 1, 1, n);
-    const t1 = ws.getCell(1, 1);
-    t1.value = mix(examTitle, '標楷體', { size: 16, bold: true });
-    t1.font = { name: '標楷體', size: 16, bold: true };
-    t1.alignment = { horizontal: 'center', vertical: 'middle' };
-    ws.getRow(1).height = 28;
-
-    // 列2：空行
-    ws.mergeCells(2, 1, 2, n);
-    ws.getRow(2).height = 10;
-
-    // 列3：貴賓揭幕位置圖
-    ws.mergeCells(3, 1, 3, n);
-    const t3 = ws.getCell(3, 1);
-    t3.value = mix('貴賓揭幕位置圖', '標楷體', { size: 16, bold: true });
-    t3.font = { name: '標楷體', size: 16, bold: true };
-    t3.alignment = { horizontal: 'center', vertical: 'middle' };
-    ws.getRow(3).height = 28;
-
-    // 列4：更新時間（藍字、靠右，電腦本機時間）
-    ws.mergeCells(4, 1, 4, n);
-    const tStamp = ws.getCell(4, 1);
-    tStamp.value = mix(getUpdateStamp(), '標楷體', { size: 10, color: { argb: 'FF0000CC' } });
-    tStamp.font = { name: '標楷體', size: 10, color: { argb: 'FF0000CC' } };
-    tStamp.alignment = { horizontal: 'right', vertical: 'middle' };
-    ws.getRow(4).height = 18;
-
-    // 列5：背板
-    for (let c = 1; c <= n; c++) ws.getCell(5, c).border = allBorder;
-    ws.mergeCells(5, 1, 5, n);
-    const t4 = ws.getCell(5, 1);
-    t4.value = '背板';
-    t4.font = { name: '標楷體', size: 12, bold: true };
-    t4.fill = grayFill;
-    t4.alignment = { horizontal: 'center', vertical: 'middle' };
-    ws.getRow(5).height = 22;
-
-    // 列6 編號／列7 姓名職稱／列8 公司（高400、直式、靠上、水平置中）
-    ws.getRow(6).height = 30;
-    ws.getRow(7).height = 400;
-    ws.getRow(8).height = 400;
-    order.forEach((rank, idx) => {
-      const s = selectedOfficers[rank - 1];
-      const r = s ? s.record : null;
-      const col = idx + 1;
-      const hl = rank === 1;
-
-      const cNum = ws.getCell(6, col);
-      cNum.value = rank;
-      cNum.font = { name: 'Times New Roman', size: 18, bold: true };
-      cNum.alignment = { horizontal: 'center', vertical: 'middle' };
-      cNum.border = allBorder;
-      if (hl) cNum.fill = orangeFill;
-
-      const cName = ws.getCell(7, col);
-      cName.value = mix(vert(r ? `${r.nameZh || ''}${r.titleZh || ''}` : ''), '標楷體', { size: 14 });
-      cName.font = { name: '標楷體', size: 14 };
-      cName.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
-      cName.border = allBorder;
-      if (hl) cName.fill = orangeFill;
-
-      const cCo = ws.getCell(8, col);
-      cCo.value = mix(vert(r ? (r.companyZh || '') : ''), '標楷體', { size: 14 });
-      cCo.font = { name: '標楷體', size: 14 };
-      cCo.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
-      cCo.border = allBorder;
-      if (hl) cCo.fill = orangeFill;
+    batches.forEach(b => {
+      const list = b.list, n = list.length, order = computeLineupOrder(n);
+      const ws = wb.addWorksheet(b.label ? b.label.replace(/\s|　/g, '') : '站位圖');
+      ws.columns = Array.from({ length: n }, () => ({ width: 12 }));
+      const titleRow = (row, text, size, h) => {
+        ws.mergeCells(row, 1, row, n);
+        const c = ws.getCell(row, 1);
+        c.value = mix(text, '標楷體', { size, bold: true });
+        c.font = { name: '標楷體', size, bold: true };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+        ws.getRow(row).height = h;
+      };
+      titleRow(1, examTitle, 16, 28);
+      ws.mergeCells(2, 1, 2, n); ws.getRow(2).height = 10;
+      titleRow(3, b.label ? b.label.replace('　', ' ') + '位置圖' : '貴賓揭幕位置圖', 16, 28);
+      ws.mergeCells(4, 1, 4, n);
+      const tStamp = ws.getCell(4, 1);
+      tStamp.value = mix(getUpdateStamp(), '標楷體', { size: 10, color: { argb: 'FF0000CC' } });
+      tStamp.font = { name: '標楷體', size: 10, color: { argb: 'FF0000CC' } };
+      tStamp.alignment = { horizontal: 'right', vertical: 'middle' };
+      ws.getRow(4).height = 18;
+      for (let c = 1; c <= n; c++) ws.getCell(5, c).border = allBorder;
+      ws.mergeCells(5, 1, 5, n);
+      const t4 = ws.getCell(5, 1);
+      t4.value = '背板'; t4.font = { name: '標楷體', size: 12, bold: true }; t4.fill = grayFill;
+      t4.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(5).height = 22;
+      ws.getRow(6).height = 30; ws.getRow(7).height = 400; ws.getRow(8).height = 400;
+      order.forEach((rank, idx) => {
+        const s = list[rank - 1], r = s ? s.record : null, col = idx + 1, hl = rank === 1;
+        const cNum = ws.getCell(6, col);
+        cNum.value = rank; cNum.font = { name: 'Times New Roman', size: 18, bold: true };
+        cNum.alignment = { horizontal: 'center', vertical: 'middle' }; cNum.border = allBorder; if (hl) cNum.fill = orangeFill;
+        const cName = ws.getCell(7, col);
+        cName.value = mix(vert(r ? `${r.nameZh || ''}${r.titleZh || ''}` : ''), '標楷體', { size: 14 });
+        cName.font = { name: '標楷體', size: 14 }; cName.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
+        cName.border = allBorder; if (hl) cName.fill = orangeFill;
+        const cCo = ws.getCell(8, col);
+        cCo.value = mix(vert(r ? (r.companyZh || '') : ''), '標楷體', { size: 14 });
+        cCo.font = { name: '標楷體', size: 14 }; cCo.alignment = { horizontal: 'center', vertical: 'top', wrapText: true };
+        cCo.border = allBorder; if (hl) cCo.fill = orangeFill;
+      });
     });
-
     const buf = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `貴賓站位圖${getTimestampSuffix()}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    saveBlobAs(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `貴賓站位圖${getTimestampSuffix()}.xlsx`);
   });
+
+  // ================= TEST：展名中文 → 英文 =================
+  const SHOW_EN = [
+    ['TIMTOS', '台北國際工具機展'], ['TAIPEI CYCLE', '台北國際自行車展覽會'], ['TAIPEI AMPA', '台北國際汽機車零配件展'],
+    ['E-Mobility Taiwan', '台灣國際智慧移動展'], ['DG Taiwan', '台灣國際創意禮品文具展'], ['TaiSPO', '台灣國際運動及健身展'],
+    ['COMPUTEX TAIPEI', '台北國際電腦展'], ['FOOD TAIPEI', '台北國際食品展覽會'], ['FOODTECH TAIPEI', '台北國際食品加工機械展'],
+    ['BIO/PHARMATECH TAIWAN', '臺灣國際生技製藥設備展'], ['TAIPEI PACK', '台北國際包裝工業展'], ['TAIWAN HORECA', '臺灣國際飯店暨餐飲設備用品展'],
+    ['MEDICAL TAIWAN', '台灣國際醫療暨健康照護展'], ['TCFB', '臺中國際茶、咖啡暨烘焙展'], ['Hobby & Fun Festival', '嗜100'],
+    ['TADTE', '台北國際航太暨國防工業展'], ['Taiwan Innotech Expo (TIE)', '台灣創新技術博覽會'], ['TAITRONICS', '台北國際電子產業科技展'],
+    ['AIoT Taiwan', '台灣國際人工智慧暨物聯網展'], ['Energy Taiwan', '台灣國際智慧能源週'], ['Net-Zero Taiwan', '台灣國際淨零永續展'],
+    ['TIWW', '台灣國際水週'], ['KAOHSIUNG FOOD SHOW', '高雄國際食品展'], ['KAOHSIUNG HORECA', '高雄國際飯店、餐飲暨烘焙設備用品展']
+  ];
+  // 常見簡稱（長的全名先比；簡稱只在全名沒對到時才用）
+  const SHOW_ALIAS = [
+    ['TIMTOS', '工具機展'], ['TAIPEI CYCLE', '自行車展'], ['TAIPEI AMPA', '汽機車零配件展'], ['E-Mobility Taiwan', '智慧移動展'],
+    ['DG Taiwan', '禮品文具展'], ['TaiSPO', '運動及健身展'], ['COMPUTEX TAIPEI', '電腦展'], ['FOODTECH TAIPEI', '食品加工機械展'],
+    ['BIO/PHARMATECH TAIWAN', '生技製藥設備展'], ['TAIPEI PACK', '包裝工業展'], ['TAIPEI PACK', '包裝展'], ['TAIWAN HORECA', '飯店暨餐飲設備用品展'],
+    ['MEDICAL TAIWAN', '醫療暨健康照護展'], ['MEDICAL TAIWAN', '醫療展'], ['TCFB', '茶咖啡暨烘焙展'], ['TADTE', '航太暨國防工業展'], ['TADTE', '航太展'],
+    ['Taiwan Innotech Expo (TIE)', '創新技術博覽會'], ['TAITRONICS', '電子產業科技展'], ['TAITRONICS', '電子展'], ['AIoT Taiwan', '物聯網展'],
+    ['Energy Taiwan', '智慧能源週'], ['Net-Zero Taiwan', '淨零永續展'], ['TIWW', '水週'],
+    ['KAOHSIUNG FOOD SHOW', '高雄食品展'], ['KAOHSIUNG HORECA', '高雄餐飲設備用品展'], ['FOOD TAIPEI', '食品展']
+  ];
+  const SHOW_EN_ALIAS = [['COMPUTEX TAIPEI', 'COMPUTEX'], ['TAIPEI CYCLE', 'CYCLE'], ['Taiwan Innotech Expo (TIE)', 'TIE']];
+  const showNorm = t => String(t || '').replace(/臺/g, '台').replace(/展覽會/g, '展').replace(/[、，,\s]/g, '');
+  function showEnFrom(zh) {
+    let t = showNorm(zh);
+    const year = (String(zh || '').match(/(19|20)\d{2}/) || [''])[0];
+    const hits = [];
+    // 長的先比，避免「台北國際食品展」吃掉「台北國際食品加工機械展」這類情況
+    SHOW_EN.concat(SHOW_ALIAS).map(([en, z]) => [en, showNorm(z)]).sort((a, b) => b[1].length - a[1].length).forEach(([en, z]) => {
+      const i = t.indexOf(z);
+      if (i >= 0) { if (!hits.some(h => h[1] === en)) hits.push([i, en]); t = t.slice(0, i) + '＿'.repeat(z.length) + t.slice(i + z.length); }
+    });
+    // 標題本來就寫英文展名的也算
+    SHOW_EN.map(([en]) => [en, en.replace(/\s*\(.*\)$/, '')]).concat(SHOW_EN_ALIAS).forEach(([en, key]) => {
+      if (!hits.some(h => h[1] === en) && new RegExp('(^|[^A-Za-z])' + key.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '($|[^A-Za-z])', 'i').test(String(zh || ''))) hits.push([999, en]);
+    });
+    if (!hits.length) return '';
+    return hits.sort((a, b) => a[0] - b[0]).map(h => h[1]).join(' & ') + (year ? ' ' + year : '');
+  }
+  const titleEnInput = document.getElementById('gen-title-en');
+  let titleEnDirty = false;
+  function syncTitleEn() { if (!titleEnDirty) titleEnInput.value = showEnFrom(genTitleInput.value); }
+  genTitleInput.addEventListener('input', syncTitleEn);
+  titleEnInput.addEventListener('input', () => {
+    titleEnDirty = titleEnInput.value.trim() !== '' && titleEnInput.value !== showEnFrom(genTitleInput.value);
+  });
+  titleEnInput.addEventListener('blur', syncTitleEn);
+
+  // ================= TEST：地點中文 → 英文 =================
+  // 例：南港一館 ＋「4樓 M區 大會舞台」→ Stage, Area M, 4F, Taipei Nangang Exhibition Center, Hall 1 (TaiNEX 1)
+  const VENUE_EN_FULL = [
+    { id: 'venue-nangang1', re: /(台北|臺北)?南港(展覽館)?(1|一)館/, en: 'Taipei Nangang Exhibition Center, Hall 1 (TaiNEX 1)' },
+    { id: 'venue-nangang2', re: /(台北|臺北)?南港(展覽館)?(2|二)館/, en: 'Taipei Nangang Exhibition Center, Hall 2 (TaiNEX 2)' },
+    { id: 'venue-wtc1', re: /(台北|臺北)?世貿(展覽館)?(1|一)館/, en: 'TWTC, Hall 1' }
+  ];
+  // 特殊地標：有寫到就用指定英文（不寫區、樓層改 1st Floor 寫法）
+  const VENUE_LANDMARKS = [{ re: /光廊/, en: 'North Lobby (Light Gallery)' }];
+  const floorOrdinal = f => /^B/i.test(f) ? f.toUpperCase() : (n => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th')))(+f) + ' Floor';
+  function venueEnFrom(extra, checkedIds) {
+    let r = String(extra || '');
+    const bases = [];
+    VENUE_EN_FULL.forEach(v => {
+      const m = r.match(v.re);
+      if (m) r = r.replace(m[0], ' ');
+      if ((m || checkedIds.includes(v.id)) && !bases.includes(v.en)) bases.push(v.en);
+    });
+    const parts = [];
+    const fl = r.match(/(B?\d+)\s*(樓|F|f)/);
+    const lm = VENUE_LANDMARKS.find(x => x.re.test(r));
+    if (lm) {
+      parts.push(lm.en);
+      if (fl) parts.push(floorOrdinal(fl[1]));
+    } else {
+      if (/舞台|舞臺/.test(r)) parts.push('Stage');
+      const area = r.match(/([A-Za-z0-9]+)\s*區/); if (area) parts.push('Area ' + area[1].toUpperCase());
+      if (fl) parts.push(fl[1].toUpperCase() + 'F');
+    }
+    return parts.concat(bases).join(', ');
+  }
+  const venueEnInput = document.getElementById('schedule-venue-en');
+  let venueEnDirty = false;
+  function venueEnAuto() {
+    const ids = VENUE_EN_FULL.map(v => v.id).filter(id => document.getElementById(id).checked);
+    return venueEnFrom(document.getElementById('schedule-venue-extra').value, ids);
+  }
+  function syncVenueEn() { if (!venueEnDirty) venueEnInput.value = venueEnAuto(); }
+  document.getElementById('schedule-venue-extra').addEventListener('input', syncVenueEn);
+  VENUE_EN_FULL.forEach(v => document.getElementById(v.id).addEventListener('change', syncVenueEn));
+  venueEnInput.addEventListener('input', () => {
+    venueEnDirty = venueEnInput.value.trim() !== '' && venueEnInput.value !== venueEnAuto();
+    if (!venueEnInput.value.trim()) { venueEnDirty = false; }
+  });
+  venueEnInput.addEventListener('blur', syncVenueEn);   // 清空後離開 → 再自動帶
 
   // ================= 程序表順序貴賓 =================
   const scheduleListEl = document.getElementById('schedule-selected-list');
@@ -1523,6 +1719,7 @@
     }
     const title = genTitleInput.value.trim() || "展覽名稱";
     const tentative = document.getElementById('schedule-tentative-chk').checked;
+    const titleEn = (titleEnInput.value.trim() || showEnFrom(genTitleInput.value)).trim();
     const bilingual = document.getElementById('schedule-bilingual-chk').checked;
     const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
 
@@ -1608,9 +1805,11 @@
     if (document.getElementById('venue-nangang2').checked) { venues.push('南港二館'); venuesEn.push('TaiNEX 2'); }
     if (document.getElementById('venue-wtc1').checked) { venues.push('世貿一館'); venuesEn.push('TWTC Hall 1'); }
     const extra = document.getElementById('schedule-venue-extra').value.trim();
-    if (extra) venues.push(extra);
-    const placeLine = `地點：${venues.join('、')}`;
-    const placeLineEn = (bilingual && venuesEn.length > 0) ? `Venue: ${venuesEn.join(', ')}` : '';
+    // 樓層／區域／舞台接在館名後面用空格；其他地點照舊用「、」
+    const isDetail = /樓|區|舞台|舞臺|\dF/i.test(extra);
+    const placeLine = `地點：${venues.join('、')}${extra ? (venues.length ? (isDetail ? ' ' : '、') : '') + extra : ''}`;
+    const venueEnVal = venueEnInput.value.trim() || venueEnAuto();
+    const placeLineEn = (bilingual && (venueEnVal || venuesEn.length)) ? `Venue: ${venueEnVal || venuesEn.join(', ')}` : '';
 
     // ---- 產生時間（依電腦本機時間，顯示於地點下方、靠右） ----
     const now = new Date();
@@ -1647,6 +1846,7 @@
         <div class="WordSection1">
         <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin-bottom:2px; font-family:${KAI};">${esc(title)}</p>
         <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0; font-family:${KAI};">開幕典禮</p>
+        ${bilingual && titleEn ? `<p data-v2="1" style="text-align:center; font-size:18pt; font-weight:bold; margin:2px 0; font-family:'Times New Roman',${KAI};">${esc(titleEn)} Opening Ceremony</p>` : ''}
         <p data-v2="1" style="text-align:center; font-size:20pt; font-weight:bold; margin:2px 0 10px; font-family:${KAI};">${esc(thirdTitle)}</p>
         <p data-v2="1" style="font-size:14pt; margin:4px 0; font-family:${KAI};">${esc(timeLine)}</p>
         ${timeLineEn ? `<p data-v2="1" style="font-size:13pt; margin:2px 0 2px 3em; font-family:'Times New Roman',${KAI};">${esc(timeLineEn)}</p>` : ''}
@@ -1665,7 +1865,8 @@
       </body>
       </html>`;
 
-    downloadBlob(html, 'application/msword', `程序表${getTimestampSuffix()}.doc`);
+    const fn = `程序表${getTimestampSuffix()}.doc`;
+    previewDoc('程序表', html, [{ label: '⬇ 下載 Word', fn: () => downloadBlob(html, 'application/msword', fn) }]);
   });
 
   renderScheduleList();
@@ -1830,14 +2031,15 @@
       </body>
       </html>`;
 
-    downloadBlob(html, 'application/msword', `唱名貴賓名單${getTimestampSuffix()}.doc`);
+    const fn = `唱名貴賓名單${getTimestampSuffix()}.doc`;
+    previewDoc('唱名貴賓名單', html, [{ label: '⬇ 下載 Word', fn: () => downloadBlob(html, 'application/msword', fn) }]);
   });
 
   renderRollcallResults();
 
   // ================= 接待計畫 =================
   const RECEPTION_STAFF = [
-    '展覽處 鄧之誠處長','南港張如蕙主任','南港陳瑾緻副主任','展覽處 張碧容副處長',
+    '展覽處 鄧之誠處長','南港張如蕙主任','南港陳瑾緻副主任','展覽處 張碧容副處長','展覽處 林君憶副處長',
     '展覽處 張卓文組長','展覽處 曾群佩組長','李建緯組長','徐毅勤','陳雅筑','許妃棻',
     '吳亭瑩','陳冠樺','黃楷婷','黃韻蓁','莊適博','王心如','鄧紀希','劉書吟','吳芷鈴',
     '襄儀1位','公關公司1位','(待確認)'
@@ -2673,15 +2875,16 @@
     const recep = {};
     receptionData.forEach((v,k)=>{ recep[k]=v; });
     return {
-      title: genTitleInput.value,
+      title: genTitleInput.value, titleEn: titleEnInput.value,
       sch: {
         y: val('sch-year'), mo: val('sch-month'), d: val('sch-day'),
         hh: val('sch-hour'), mi: val('sch-min'),
         v1: chk('venue-nangang1'), v2: chk('venue-nangang2'), v3: chk('venue-wtc1'),
-        extra: val('schedule-venue-extra'),
+        extra: val('schedule-venue-extra'), extraEn: val('schedule-venue-en'),
         tentative: chk('schedule-tentative-chk'), bilingual: chk('schedule-bilingual-chk')
       },
       selected: selectedOfficers.map(s=>s.record.id),
+      selectedBatch: selectedOfficers.map(s=>s.batch||'both'), lineupSplit,
       schedule: scheduleOfficers.map(s=>({id:s.record.id, t:s.speechType||null})),
       rollcall: rollcallOfficers.map(s=>s.record.id),
       reception: { data: recep, stations: stationData, order: receptionOrder, footer: receptionFooterTa.value }
@@ -2693,16 +2896,23 @@
     const setV = (id,v)=>{ const el=document.getElementById(id); if(el) el.value = v||''; };
     const setC = (id,v)=>{ const el=document.getElementById(id); if(el) el.checked = !!v; };
     genTitleInput.value = st.title || '';
+    titleEnInput.value = st.titleEn || '';
+    titleEnDirty = !!(st.titleEn && st.titleEn !== showEnFrom(st.title));
+    syncTitleEn();
     if(st.sch){
       setV('sch-year',st.sch.y); setV('sch-month',st.sch.mo); setV('sch-day',st.sch.d);
       setV('sch-hour',st.sch.hh); setV('sch-min',st.sch.mi);
       setC('venue-nangang1',st.sch.v1); setC('venue-nangang2',st.sch.v2); setC('venue-wtc1',st.sch.v3);
       setV('schedule-venue-extra',st.sch.extra);
+      setV('schedule-venue-en',st.sch.extraEn);
+      venueEnDirty = !!(st.sch.extraEn && st.sch.extraEn !== venueEnAuto());
+      syncVenueEn();
       setC('schedule-tentative-chk',st.sch.tentative); setC('schedule-bilingual-chk',st.sch.bilingual);
     }
     const byId = id => allRecords.find(r=>r.id===id);
     selectedOfficers.length=0;
-    (st.selected||[]).forEach((id,i)=>{ const r=byId(id); if(r) selectedOfficers.push({order:i+1,record:r}); });
+    (st.selected||[]).forEach((id,i)=>{ const r=byId(id); if(r) selectedOfficers.push({order:selectedOfficers.length+1,record:r,batch:(st.selectedBatch||[])[i]||'both'}); });
+    lineupSplit = !!st.lineupSplit; paintSplitBtn();
     scheduleOfficers.length=0;
     (st.schedule||[]).forEach((it,i)=>{ const r=byId(it.id); if(r) scheduleOfficers.push({order:i+1,record:r,speechType:it.t||null}); });
     rollcallOfficers.length=0;
@@ -2822,6 +3032,23 @@
   wsRender();
 
   if (!receptionFooterTa.value.trim()) receptionFooterTa.value = buildFooterTemplate();
+
+  // TEST：名單或欄位改了 → 右邊預覽標成「不是最新」
+  { const a = renderScheduleList; renderScheduleList = function () { a(); pvStale(); }; }
+  { const a = renderRollcallList; renderRollcallList = function () { a(); pvStale(); }; }
+  { const a = renderGenSelectedList; renderGenSelectedList = function () { a(); pvStale(); }; }
+  document.querySelector('.gen-main').addEventListener('input', e => {
+    if (!/search-input$/.test(e.target.id || '')) pvStale();
+  });
+  document.querySelector('.gen-main').addEventListener('change', e => {
+    if (e.target.type === 'checkbox') pvStale();
+  });
+  // TEST：接待計畫暫時不用，預設收起
+  document.getElementById('recep-toggle').addEventListener('click', () => {
+    const w = document.getElementById('recep-wrap'), open = w.style.display === 'none';
+    w.style.display = open ? 'block' : 'none';
+    document.getElementById('recep-toggle').textContent = open ? '▾ 接待計畫（暫時不用，點此收起）' : '▸ 接待計畫（暫時不用，點此展開）';
+  });
 
 </script>
 
@@ -3070,6 +3297,65 @@
   }
   .note code { background: #efe9da; padding: 1px 5px; border-radius: 2px; font-size: 11px; }
 
+  /* ===== TEST：活動組專用版面（左邊操作、右邊預覽） ===== */
+  body.gen-mode .wrap { max-width: 1480px; }
+  .gen-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(380px,44%); gap:24px; align-items:start; }
+  .gen-main { min-width:0; }
+  @media (max-width:1100px) { .gen-layout { grid-template-columns:1fr; } }
+  .card { background:#fff; border:1px solid var(--paper-line); border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+  .card h2 { font-size:16px; font-weight:800; color:var(--navy); margin:0 0 12px; letter-spacing:.02em; }
+  .step-h { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .step-h h2 { margin:0; }
+  .step-h small { font-size:12px; color:var(--ink-soft); font-weight:400; }
+  .step-n { width:26px; height:26px; border-radius:50%; background:var(--navy); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; flex-shrink:0; }
+  .step-opts { margin-left:auto; display:flex; gap:14px; }
+  .opt { font-size:13px; font-weight:700; color:var(--navy-light); display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none; }
+  .opt input { width:15px; height:15px; cursor:pointer; }
+  .step-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:14px; padding-top:14px; border-top:1px dashed var(--paper-line); }
+  .btn--pv { font-size:14px; padding:11px 20px; }
+  .sub-h { font-size:12px; font-weight:800; color:var(--gold); margin:14px 0 8px; letter-spacing:.05em; }
+  .gen-title-in { width:100%; font-family:inherit; font-size:16px; font-weight:700; padding:12px 14px; border:1px solid var(--paper-line); border-radius:6px; background:var(--paper); color:var(--navy); outline:none; box-sizing:border-box; }
+  .gen-title-in:focus { border-color:var(--gold); background:#fff; }
+  #generator-view .card .search-box { margin-bottom:10px; padding:10px 14px; }
+  #generator-view .card-row { padding:9px 14px !important; margin-bottom:6px; gap:12px; }
+  #generator-view .avatar { width:40px; height:40px; font-size:15px; }
+  #generator-view .info__name { font-size:14px; }
+  #generator-view .gen-num-badge { width:26px; height:26px; font-size:12px; }
+  #generator-view .empty-state { padding:18px !important; }
+  .tool-links { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
+  .tool-links a { display:flex; flex-direction:column; gap:3px; padding:11px 14px; border:1px solid var(--paper-line); border-radius:8px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:13.5px; text-decoration:none; }
+  .tool-links a:hover { border-color:var(--gold); }
+  .tool-links a small { font-weight:400; font-size:11.5px; color:var(--ink-soft); }
+  .split-btn { margin-left:auto; font-family:inherit; font-size:13px; font-weight:800; padding:7px 14px; border:1.5px solid var(--paper-line); border-radius:999px; background:#fff; color:var(--ink-soft); cursor:pointer; }
+  .split-btn:hover { border-color:var(--gold); color:var(--navy); }
+  .split-btn--on { background:var(--gold); border-color:var(--gold); color:#fff; }
+  .batch-btns { display:flex; gap:4px; flex-shrink:0; }
+  .batch-btn { font-family:inherit; font-size:12px; font-weight:700; padding:5px 10px; border:1px solid var(--paper-line); border-radius:999px; background:#fff; color:var(--ink-soft); cursor:pointer; white-space:nowrap; }
+  .batch-btn--on { background:var(--navy); border-color:var(--navy); color:#fff; }
+  .batch-no { font-size:11.5px; color:var(--gold); font-weight:700; margin-top:2px; }
+  .seat-link { display:inline-flex; align-items:center; gap:6px; margin-bottom:6px; padding:9px 16px; border:1.5px solid var(--gold); border-radius:8px; background:#fbf8f1; color:var(--navy); font-weight:800; font-size:14px; text-decoration:none; }
+  .seat-link:hover { background:#f2e7d3; }
+  .venue-en-row { margin-top:10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .venue-en-row span { font-size:13.5px; font-weight:700; color:var(--navy-light); flex-shrink:0; }
+  .venue-en-row input { flex:1; min-width:260px; font-family:inherit; font-size:14px; padding:10px 12px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--ink); outline:none; }
+  .venue-en-row input:focus { border-color:var(--gold); background:#fff; }
+  .venue-en-row small { width:100%; font-size:12px; color:var(--ink-soft); }
+  .recep-toggle { width:100%; margin:8px 0 16px; padding:10px 14px; font-family:inherit; font-size:13px; font-weight:700; color:var(--ink-soft); background:transparent; border:1px dashed var(--paper-line); border-radius:8px; cursor:pointer; text-align:left; }
+  .recep-toggle:hover { color:var(--navy); border-color:var(--gold-light); }
+  /* 預覽 */
+  .gen-preview { position:sticky; top:16px; height:calc(100vh - 32px); display:flex; flex-direction:column; background:#fff; border:1px solid var(--paper-line); border-radius:12px; overflow:hidden; }
+  @media (max-width:1100px) { .gen-preview { position:relative; top:0; height:85vh; } }
+  .pv-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--paper-line); }
+  .pv-kicker { font-size:11px; font-weight:800; color:var(--gold); letter-spacing:.12em; }
+  .pv-title { font-size:16px; font-weight:800; color:var(--navy); margin-top:2px; }
+  .pv-meta { font-size:12px; color:var(--ink-soft); margin-top:3px; }
+  .pv-meta.stale { color:var(--warn); font-weight:700; }
+  .pv-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .pv-actions .btn { font-size:13.5px; padding:9px 16px; }
+  .pv-body { position:relative; flex:1; background:#e7e3da; }
+  #pv-frame { position:absolute; inset:0; width:100%; height:100%; border:0; display:none; background:#e7e3da; }
+  .pv-empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; font-size:13px; line-height:1.7; color:var(--ink-soft); }
+
   /* V10：版號旁的「1119改」閃亮標記 */
   .v-note {
     position:relative; display:inline-block; margin-left:10px; vertical-align:middle;
@@ -3105,7 +3391,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V10</span><span class="v-note">1119改</span></h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V11</span><span class="v-note">1120改</span></h1>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
         <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
@@ -3152,7 +3438,10 @@
     <div id="generator-view" style="display:none">
       <div class="header">
         <div>
-          <h1>活動組專用</h1>
+          <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+            <h1>活動組專用</h1>
+            <a href="https://taitraaah09-sudo.github.io/search/activity.html" target="_blank" rel="noopener" class="seat-link">🪑 席次圖生產系統 ＆ 手機查詢系統</a>
+          </div>
           <div class="subtitle">Dossier Photo Sheet Generator</div>
         </div>
         <div class="toolbar">
@@ -3160,9 +3449,12 @@
         </div>
       </div>
       <hr class="divider">
-      <div class="desc">從共用資料庫中挑選貴賓、依點擊順序自動編號，最後匯出成 Word 版合影照片表</div>
+      <div class="desc">照順序做：先挑貴賓 → 程序表 → 唱名 → 站位 → 照片。每一份都先按「👁 預覽」看右邊，確認沒問題再從右邊下載。</div>
 
-            <!-- ================= 工作檔存讀（Firebase 同步，五格） ================= -->
+      <div class="gen-layout">
+      <div class="gen-main">
+
+      <!-- ================= 工作檔存讀（Firebase 同步，五格） ================= -->
       <div class="card" style="margin:0 0 22px;">
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
           <h2 style="margin:0;">工作檔存讀</h2>
@@ -3173,51 +3465,35 @@
         <button id="ws-wipe-btn" class="btn" style="width:100%; color:var(--warn); border-color:var(--warn); font-weight:800;">🧹 洗白全部</button>
       </div>
 
-<div class="card" style="margin-bottom:16px;">
-        <h2>展覽名稱</h2>
-        <input id="gen-title-input" type="text" placeholder="例如：2026醫療展開幕典禮合影貴賓照片"
-          style="width:100%; font-family:inherit; font-size:16px; font-weight:700; padding:12px 14px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--navy); outline:none;">
-      </div>
-
-      <div class="search-box">
-        <span>🔍</span>
-        <input id="gen-search-input" type="text" placeholder="模糊搜尋：輸入公司、長官姓名或職稱的任一字…">
-      </div>
-
-      <div id="gen-results" style="margin-bottom: 20px;"></div>
-
       <div class="card">
-        <h2>已選擇的貴賓（依編號順序，點擊 ✕ 可移除）</h2>
-        <div id="gen-selected-list"></div>
-      </div>
-
-      <div style="margin-top:20px; display:flex; justify-content:flex-end;">
-        <div style="display:inline-flex; flex-direction:column; gap:10px;">
-          <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
-            <button id="gen-unveil-list-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📝 揭幕貴賓名單</button>
-            <button id="gen-lineup-word-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📐 站位圖(Word)</button>
-            <button id="gen-lineup-excel-btn" class="btn" style="font-size:14px; padding:12px 24px;">📊 站位圖(Excel)</button>
-            <button id="gen-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📄 揭幕及合影貴賓(照片)</button>
-          </div>
-          <a href="https://taitraaah09-sudo.github.io/VIP-Photo/" target="_blank" rel="noopener" style="display:block; padding:13px 20px; border:1.5px solid var(--gold); border-radius:6px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:14px; text-decoration:none; text-align:center; box-sizing:border-box;">🔗 貴賓開幕站位產生器(當你會一直改時打開它)</a>
-          <a href="https://taitraaah09-sudo.github.io/security/" target="_blank" rel="noopener" style="display:block; padding:13px 20px; border:1.5px solid var(--gold); border-radius:6px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:14px; text-decoration:none; text-align:center; box-sizing:border-box;">🛡️ 維安簡報 點我 (使用前請先讀檔，會自動連動)</a>
-          <a href="https://taitraaah09-sudo.github.io/search/activity.html" target="_blank" rel="noopener" style="display:block; padding:13px 20px; border:1.5px solid var(--gold); border-radius:6px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:14px; text-decoration:none; text-align:center; box-sizing:border-box;">🪑 席次圖生產系統 & 手機查詢系統</a>
+        <div class="step-h"><h2>展覽名稱</h2><small>會印在每一份文件的標題</small></div>
+        <input id="gen-title-input" type="text" placeholder="例如：2026台灣國際水週" class="gen-title-in">
+        <div class="venue-en-row">
+          <span>英文展名：</span>
+          <input id="gen-title-en" type="text" placeholder="打中文展名會自動帶，例如 TIWW 2026">
+          <small>認得 TIMTOS、COMPUTEX、TIWW…等 26 個展；兩展同期會用 &amp; 連起來、年份放最後。要改直接改，清空就會再自動帶。中英版程序表會用到</small>
         </div>
       </div>
 
-      <!-- ================= 程序表順序貴賓 ================= -->
-      <div class="card" style="margin-top:26px;">
-        <h2 style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
-          程序表順序貴賓（依編號順序，點擊 ✕ 可移除）
-          <label style="font-size:13px; font-weight:700; display:flex; align-items:center; gap:5px; color:var(--warn); cursor:pointer; user-select:none;">
-            <input type="checkbox" id="schedule-tentative-chk" style="width:16px; height:16px; cursor:pointer;"> (暫定)
-          </label>
-          <label style="font-size:13px; font-weight:700; display:flex; align-items:center; gap:5px; color:var(--navy-light); cursor:pointer; user-select:none;">
-            <input type="checkbox" id="schedule-bilingual-chk" style="width:16px; height:16px; cursor:pointer;"> 中英版
-          </label>
-        </h2>
-        <div id="schedule-selected-list"></div>
+      <!-- ① 挑選貴賓 -->
+      <div class="card">
+        <div class="step-h"><span class="step-n">1</span><h2>挑選貴賓</h2><small>按「＋」加入，會同時進入下面的程序表、唱名、站位三份名單，三份順序各自調整</small></div>
+        <div class="search-box">
+          <span>🔍</span>
+          <input id="gen-search-input" type="text" placeholder="模糊搜尋：輸入公司、長官姓名或職稱的任一字…">
+        </div>
+        <div id="gen-results"></div>
+      </div>
 
+      <!-- ② 程序表 -->
+      <div class="card">
+        <div class="step-h"><span class="step-n">2</span><h2>程序表</h2><small>拖曳 ⠿ 調整致詞順序</small>
+          <span class="step-opts">
+            <label class="opt"><input type="checkbox" id="schedule-tentative-chk"> (暫定)</label>
+            <label class="opt"><input type="checkbox" id="schedule-bilingual-chk"> 中英版</label>
+          </span>
+        </div>
+        <div id="schedule-selected-list"></div>
         <div style="margin-top:18px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:14px;">
           <span style="font-size:13.5px; font-weight:700; color:var(--navy-light); flex-shrink:0;">時間：</span>
           <input id="sch-year" type="text" inputmode="numeric" placeholder="YYYY" style="width:72px; font-family:inherit; font-size:14px; padding:10px 8px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--ink); outline:none; text-align:center;">
@@ -3245,31 +3521,73 @@
           <label style="font-size:13.5px; display:flex; align-items:center; gap:5px; cursor:pointer; user-select:none;">
             <input type="checkbox" id="venue-wtc1" style="width:15px; height:15px; cursor:pointer;"> 世貿一館
           </label>
-          <input id="schedule-venue-extra" type="text" placeholder="其他地點自由填寫…"
+          <input id="schedule-venue-extra" type="text" placeholder="樓層／區域／其他地點，例如：4樓 M區 大會舞台"
             style="flex:1; min-width:180px; font-family:inherit; font-size:14px; padding:10px 12px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--ink); outline:none;">
         </div>
-
-        <div style="margin-top:16px; text-align:right;">
-          <button id="schedule-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📋 程序表生成</button>
+        <div class="venue-en-row">
+          <span>Venue：</span>
+          <input id="schedule-venue-en" type="text" placeholder="打中文會自動翻（中英版程序表用）">
+          <small>自動翻：舞台→Stage、M區→Area M、4樓→4F、勾選的館名→英文全名；要改直接改，清空就會再自動帶</small>
+        </div>
+        <div class="step-actions">
+          <button id="schedule-generate-btn" class="btn btn--primary btn--pv">👁 預覽程序表</button>
         </div>
       </div>
 
-      <!-- ================= 貴賓唱名名單 ================= -->
-      <div class="search-box" style="margin-top:26px;">
-        <span>🔍</span>
-        <input id="rollcall-search-input" type="text" placeholder="模糊搜尋：輸入公司、長官姓名或職稱的任一字…">
-      </div>
-
-      <div id="rollcall-results" style="margin-bottom: 20px;"></div>
-
+      <!-- ③ 唱名 -->
       <div class="card">
-        <h2>貴賓唱名名單順序（依編號順序，點擊 ✕ 可移除）</h2>
+        <div class="step-h"><span class="step-n">3</span><h2>唱名名單</h2><small>上面挑的貴賓會自動進來；也可以在這裡另外搜尋加人</small></div>
+        <div class="search-box">
+          <span>🔍</span>
+          <input id="rollcall-search-input" type="text" placeholder="另外加人：輸入公司、長官姓名或職稱…">
+        </div>
+        <div id="rollcall-results"></div>
+        <div class="sub-h">唱名順序</div>
         <div id="rollcall-selected-list"></div>
-        <div style="margin-top:16px; text-align:right;">
-          <button id="rollcall-generate-btn" class="btn btn--primary" style="font-size:14px; padding:12px 24px;">📢 唱名名單生成</button>
+        <div class="step-actions">
+          <button id="rollcall-generate-btn" class="btn btn--primary btn--pv">👁 預覽唱名名單</button>
         </div>
       </div>
 
+      <!-- ④ 站位 -->
+      <div class="card">
+        <div class="step-h"><span class="step-n">4</span><h2>揭幕／合影站位</h2><small>這個順序也用在第 5 步的照片表；1 號站中間</small>
+          <button id="lineup-split-btn" type="button" class="split-btn" title="揭幕一梯、合影一梯，各排各的站位">分兩梯次</button>
+        </div>
+        <div class="search-box">
+          <span>🔍</span>
+          <input id="lineup-search-input" type="text" placeholder="另外加人（只加進站位／照片）：輸入公司、長官姓名或職稱…">
+        </div>
+        <div id="lineup-results"></div>
+        <div class="sub-h" id="lineup-sub-h">站位順序</div>
+        <div id="gen-selected-list"></div>
+        <div class="step-actions">
+          <button id="gen-unveil-list-btn" class="btn btn--pv">👁 預覽揭幕貴賓名單</button>
+          <button id="gen-lineup-word-btn" class="btn btn--primary btn--pv">👁 預覽站位圖</button>
+          <button id="gen-lineup-excel-btn" class="btn" style="display:none">站位圖 Excel</button>
+        </div>
+      </div>
+
+      <!-- ⑤ 照片 -->
+      <div class="card">
+        <div class="step-h"><span class="step-n">5</span><h2>合影貴賓照片</h2><small>照第 4 步的順序，兩人一列，照片嵌在 Word 裡</small></div>
+        <div class="step-actions" style="border-top:none; padding-top:0; margin-top:0;">
+          <button id="gen-generate-btn" class="btn btn--primary btn--pv">👁 預覽合影貴賓照片</button>
+        </div>
+      </div>
+
+      <!-- 相關工具 -->
+      <div class="card">
+        <div class="step-h"><h2>相關工具</h2></div>
+        <div class="tool-links">
+          <a href="https://taitraaah09-sudo.github.io/VIP-Photo/" target="_blank" rel="noopener">🔗 貴賓開幕站位產生器<small>當你會一直改時打開它</small></a>
+          <a href="https://taitraaah09-sudo.github.io/security/" target="_blank" rel="noopener">🛡️ 維安簡報<small>使用前請先讀檔，會自動連動</small></a>
+        </div>
+      </div>
+
+      <!-- 接待計畫（暫時不用，預設收起） -->
+      <button id="recep-toggle" type="button" class="recep-toggle">▸ 接待計畫（暫時不用，點此展開）</button>
+      <div id="recep-wrap" style="display:none;">
       <!-- ================= 接待計畫 ================= -->
       <div class="card" style="margin-top:26px;">
         <h2>接待計畫（貴賓依「唱名名單」順序自動帶入）</h2>
@@ -3352,6 +3670,25 @@
         .row-drag-handle { cursor:grab; }
         .row-drag-handle:active { cursor:grabbing; }
       </style>
+      </div>
+
+      </div><!-- /gen-main -->
+
+      <aside class="gen-preview" id="gen-preview">
+        <div class="pv-head">
+          <div class="pv-head-l">
+            <div class="pv-kicker">預覽</div>
+            <div class="pv-title" id="pv-title">還沒有文件</div>
+            <div class="pv-meta" id="pv-meta"></div>
+          </div>
+          <div class="pv-actions" id="pv-actions"></div>
+        </div>
+        <div class="pv-body">
+          <iframe id="pv-frame" title="文件預覽"></iframe>
+          <div class="pv-empty" id="pv-empty"><div class="empty-seal">覽</div><div>按左邊任一區的「👁 預覽」<br>文件會出現在這裡，確認後再從上方下載</div></div>
+        </div>
+      </aside>
+      </div><!-- /gen-layout -->
     </div>
   </div>
 
