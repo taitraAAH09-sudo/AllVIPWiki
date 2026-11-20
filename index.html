@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V12</title>
+<title>長官中英一覽表 V13</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -581,14 +581,14 @@
 
   // ===== TEST：站位分兩梯次（第一梯 揭幕、第二梯 合影）=====
   let lineupSplit = false;
-  // V12：只分兩種 — 揭幕＋合影（第一梯）、第二梯合影
+  // V13：第一梯揭幕＝選「揭幕＋合影」的人；第二梯合影＝全部的人（第一梯的人也在，選「第二梯合影」的人只上第二梯）
   const LINEUP_BATCH_OPTS = [{ k: 'both', t: '揭幕＋合影' }, { k: 'photo', t: '第二梯合影' }];
   const isPhotoOnly = s => s.batch === 'photo';
   function lineupBatches() {
     if (!lineupSplit) return [{ key: 'all', label: '', short: '', list: selectedOfficers.slice() }];
     return [
       { key: 'unveil', label: '第一梯揭幕', short: '揭幕', list: selectedOfficers.filter(s => !isPhotoOnly(s)) },
-      { key: 'photo', label: '第二梯合影', short: '第二梯合影', list: selectedOfficers.filter(isPhotoOnly) }
+      { key: 'photo', label: '第二梯合影', short: '合影', list: selectedOfficers.slice() }
     ];
   }
   // 照片表：沒分梯＝一張「合影貴賓」；分梯＝「揭幕貴賓」＋「第二梯合影貴賓」放同一份
@@ -604,7 +604,7 @@
     const b = document.getElementById('lineup-split-btn');
     b.classList.toggle('split-btn--on', lineupSplit);
     b.textContent = lineupSplit ? '✓ 分兩梯次（揭幕／合影）' : '分兩梯次';
-    document.getElementById('lineup-sub-h').textContent = lineupSplit ? '站位順序（第二梯合影的人另外排；號碼各梯分開算）' : '站位順序';
+    document.getElementById('lineup-sub-h').textContent = lineupSplit ? '站位順序（揭幕＋合影的人兩梯都上；選「第二梯合影」的只上第二梯；號碼各梯分開算）' : '站位順序';
   }
   document.getElementById('lineup-split-btn').addEventListener('click', () => {
     lineupSplit = !lineupSplit; paintSplitBtn(); renderGenSelectedList();
@@ -3412,7 +3412,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V12</span><span class="v-note">1120改</span></h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V13</span><span class="v-note">1120改</span></h1>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
         <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
