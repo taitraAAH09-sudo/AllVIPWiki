@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V14</title>
+<title>長官中英一覽表 V15</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -573,6 +573,7 @@
       `;
       item.querySelectorAll('.batch-btn').forEach(b => b.addEventListener('click', () => { s.batch = b.dataset.k; renderGenSelectedList(); }));
       item.querySelector('.delete-btn').addEventListener('click', () => toggleSelect(s.record));
+      addMoveBtns(item, selectedOfficers, i, () => renderGenResults());
       attachDragHandlers(item);
       genSelectedEl.appendChild(item);
     });
@@ -640,6 +641,26 @@
     });
   }
   document.getElementById('lineup-search-input').addEventListener('input', renderLineupResults);
+
+  // V15：手機不能拖曳 → 每列加「↑ ↓」（只在手機寬度顯示）
+  function addMoveBtns(item, arr, i, rerender) {
+    const box = document.createElement('div');
+    box.className = 'mv-btns';
+    [['↑', -1], ['↓', 1]].forEach(([t, d]) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = t; b.title = d < 0 ? '往上移' : '往下移';
+      const j = i + d;
+      if (j < 0 || j >= arr.length) b.disabled = true;
+      b.addEventListener('click', () => {
+        const [m] = arr.splice(i, 1); arr.splice(j, 0, m);
+        arr.forEach((s, k) => s.order = k + 1);
+        rerender();
+      });
+      box.appendChild(b);
+    });
+    const del = item.querySelector('.delete-btn');
+    item.insertBefore(box, del);
+  }
 
   // ---------- 拖曳排序 ----------
   let dragSrcIndex = null;
@@ -1338,12 +1359,16 @@
     html{background:#e7e3da;} body{margin:0 !important; padding:18px 0 28px;}
     .WordSection1{width:21cm; min-height:29.7cm; margin:0 auto; background:#fff; padding:1.5cm 1cm; box-sizing:border-box; box-shadow:0 2px 14px rgba(28,43,58,.16);}
   </style>`;
+  let pvZoomed = false;   // 手機：預設整頁縮到螢幕寬；按「🔍 放大」看原尺寸、可左右滑
+  function paintPvZoom() { const b = document.getElementById('pv-zoom'); if (b) b.textContent = pvZoomed ? '🔍 整頁' : '🔍 放大'; }
   function pvFit() {
     const d = pvFrame.contentDocument; if (!d || !d.body) return;
-    const z = Math.min(1, (pvFrame.clientWidth - 28) / 794);   // 21cm ≈ 794px
+    const z = pvZoomed ? 0.9 : Math.min(1, (pvFrame.clientWidth - 28) / 794);   // 21cm ≈ 794px
     d.body.style.zoom = z > 0 ? z : 1;
   }
   window.addEventListener('resize', pvFit);
+  document.getElementById('pv-zoom').addEventListener('click', () => { pvZoomed = !pvZoomed; paintPvZoom(); pvFit(); });
+  document.getElementById('pv-close').addEventListener('click', () => { document.getElementById('gen-preview').classList.remove('pv-open'); document.body.style.overflow = ''; });
   function previewDoc(label, html, actions) {
     pvFrame.onload = pvFit;
     pvFrame.srcdoc = html.includes('</head>') ? html.replace('</head>', PV_CSS + '</head>') : PV_CSS + html;
@@ -1368,7 +1393,8 @@
       });
       box.appendChild(b);
     });
-    if (window.innerWidth <= 1100) document.getElementById('gen-preview').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (window.innerWidth <= 760) { pvZoomed = false; paintPvZoom(); document.getElementById('gen-preview').classList.add('pv-open'); document.body.style.overflow = 'hidden'; }
+    else if (window.innerWidth <= 1100) document.getElementById('gen-preview').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
   function pvStale() {
     if (!pvShown || pvIsStale) return;
@@ -1698,6 +1724,7 @@
         });
       });
       item.querySelector('.delete-btn').addEventListener('click', () => removeFromSchedule(s.record.id));
+      addMoveBtns(item, scheduleOfficers, i, () => renderScheduleList());
       attachScheduleDragHandlers(item);
       scheduleListEl.appendChild(item);
     });
@@ -1975,6 +2002,7 @@
         <button class="delete-btn" title="移除">✕</button>
       `;
       item.querySelector('.delete-btn').addEventListener('click', () => toggleRollcall(s.record));
+      addMoveBtns(item, rollcallOfficers, i, () => renderRollcallResults());
       attachRollcallDragHandlers(item);
       rollcallListEl.appendChild(item);
     });
@@ -3379,6 +3407,55 @@
   #pv-frame { position:absolute; inset:0; width:100%; height:100%; border:0; display:none; background:#e7e3da; }
   .pv-empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; font-size:13px; line-height:1.7; color:var(--ink-soft); }
 
+  /* ===== V15：手機版（寬度 760 以下）===== */
+  .mv-btns, .pv-mobile-bar { display:none; }
+  @media (max-width:760px) {
+    body { padding:18px 12px 48px; }
+    .wrap { padding-right:0; }
+    /* 一覽表首頁：按鈕整齊排 */
+    .header { flex-direction:column; align-items:stretch; }
+    .header > div:last-child { align-items:stretch !important; }
+    #gen-entry-btn { width:100%; justify-content:center; }
+    .header > div:last-child > div { justify-content:flex-start !important; }
+    .header > div:last-child > div > a, .header > div:last-child > div > button { flex:1; justify-content:center; }
+    .toolbar { display:grid; grid-template-columns:1fr 1fr; }
+    .toolbar .status-pill { grid-column:1 / -1; justify-content:center; }
+    .toolbar .btn { justify-content:center; }
+    .seat-link { width:100%; justify-content:center; }
+    /* 卡片 */
+    .card { padding:14px 12px; border-radius:10px; }
+    .step-h small { width:100%; }
+    .step-opts, .split-btn { margin-left:0; }
+    /* 名單列：名字一整行，按鈕換到下面 */
+    #generator-view .card-row { flex-wrap:wrap; gap:8px; padding:10px 10px !important; }
+    #generator-view .card-row .info { flex:1 1 0; min-width:0; }
+    #generator-view .gen-drag-handle { display:none; }
+    .speech-btns, .batch-btns { order:10; flex-basis:100%; justify-content:flex-start; flex-wrap:wrap; padding-left:34px; }
+    .speech-btn, .batch-btn { padding:6px 10px; }
+    .mv-btns { display:flex; gap:4px; flex-shrink:0; }
+    .mv-btns button { width:30px; height:30px; border-radius:8px; border:1px solid var(--paper-line); background:#fff; color:var(--navy); font-size:15px; font-weight:800; cursor:pointer; }
+    .mv-btns button:disabled { opacity:.3; }
+    /* 工作檔存讀：一格一行 */
+    #ws-slots > div { flex-wrap:nowrap !important; gap:5px !important; }
+    #ws-slots .btn { padding:8px 8px !important; font-size:12px !important; flex-shrink:0; }
+    #ws-slots .ws-name { min-width:0 !important; width:0; }
+    /* 時間、地點 */
+    #sch-year { width:62px !important; } #sch-month, #sch-day, #sch-hour, #sch-min { width:44px !important; }
+    #schedule-venue-extra { min-width:100% !important; }
+    .venue-en-row input { min-width:100%; }
+    .step-actions .btn--pv { flex:1; justify-content:center; }
+    /* 預覽：全螢幕跳出 */
+    .gen-preview { display:none; }
+    .gen-preview.pv-open { display:flex; position:fixed; inset:0; top:0; height:100%; z-index:200; border-radius:0; border:0; }
+    .pv-head { flex-wrap:wrap; padding:12px; }
+    .pv-head-l { flex:1 1 60%; }
+    .pv-actions { flex:1 1 100%; justify-content:stretch; }
+    .pv-actions .btn { flex:1; justify-content:center; }
+    .pv-mobile-bar { display:flex; gap:6px; flex:1 1 100%; }
+    .pv-mobile-bar .btn { flex:1; justify-content:center; }
+    #pv-frame { overflow:auto; }
+  }
+
   /* V10：版號旁的「1119改」閃亮標記 */
   .v-note {
     position:relative; display:inline-block; margin-left:10px; vertical-align:middle;
@@ -3414,7 +3491,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V14</span><span class="v-note">1120改</span></h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V15</span><span class="v-note">1120改</span></h1>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
         <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
@@ -3705,6 +3782,7 @@
             <div class="pv-meta" id="pv-meta"></div>
           </div>
           <div class="pv-actions" id="pv-actions"></div>
+          <div class="pv-mobile-bar"><button type="button" id="pv-zoom" class="btn">🔍 放大</button><button type="button" id="pv-close" class="btn">✕ 關閉</button></div>
         </div>
         <div class="pv-body">
           <iframe id="pv-frame" title="文件預覽"></iframe>
