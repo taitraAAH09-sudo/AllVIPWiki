@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V13</title>
+<title>長官中英一覽表 V14</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -593,8 +593,10 @@
   }
   // 照片表：沒分梯＝一張「合影貴賓」；分梯＝「揭幕貴賓」＋「第二梯合影貴賓」放同一份
   function photoBatches() {
-    if (!lineupSplit) return [{ head: '合影貴賓', list: selectedOfficers.slice() }];
-    return lineupBatches().filter(b => b.list.length).map(b => ({ head: b.key === 'unveil' ? '揭幕貴賓' : '第二梯合影貴賓', list: b.list }));
+    if (!lineupSplit) return [{ head: '合影貴賓', list: selectedOfficers.slice(), start: 0 }];
+    // V14：照片表的第二梯只放「第二梯才上」的人，號碼接著第一梯往下編
+    const first = selectedOfficers.filter(s => !isPhotoOnly(s)), second = selectedOfficers.filter(isPhotoOnly);
+    return [{ head: '揭幕貴賓', list: first, start: 0 }, { head: '第二梯合影貴賓', list: second, start: first.length }].filter(b => b.list.length);
   }
   function lineupUnveilList() { return lineupSplit ? lineupBatches()[0].list : selectedOfficers.slice(); }
   function lineupBatchNo(s) {
@@ -783,14 +785,14 @@
         + `<w:vAlign w:val="${vAlign}"/></w:tcPr>${inner}</w:tc>`;
 
       // ---- 表格列（V12：分梯時一梯一張表，同一份檔）----
-      async function buildRows(list) {
+      async function buildRows(list, start = 0) {
         let rows = '';
         for (let i = 0; i < list.length; i += 2) {
           rows += '<w:tr><w:trPr><w:cantSplit/></w:trPr>';
           for (let j = i; j < i + 2; j++) {
             if (j < list.length) {
               const r = list[j].record;
-              const order = j + 1;
+              const order = start + j + 1;
               const line1 = `${order}. ${r.companyZh || ''}`;
               const line2 = `${r.nameZh || ''}${r.titleZh || ''}`;
               let pic;
@@ -825,7 +827,7 @@
       let table = '';
       for (let bi = 0; bi < batches.length; bi++) {
         if (bi > 0) table += '<w:p><w:pPr><w:spacing w:before="0" w:after="240"/></w:pPr></w:p>';
-        table += makeTable(batches[bi].head, await buildRows(batches[bi].list));
+        table += makeTable(batches[bi].head, await buildRows(batches[bi].list, batches[bi].start));
       }
 
       const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
@@ -902,7 +904,7 @@
     const title = genTitleInput.value.trim() || "貴賓合影照片";
     const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
     const td = 'border:1px solid #000; padding:5px 7px; vertical-align:top; font-size:11pt;';
-    const rowsOf = list => {
+    const rowsOf = (list, start = 0) => {
     let rows = '';
     for (let i = 0; i < list.length; i += 2) {
       rows += '<tr>';
@@ -912,7 +914,7 @@
         const r = s.record;
         const pic = r.photo ? `<img src="${r.photo}" style="max-width:3.6cm; max-height:3.8cm; display:block; margin:0 auto;">`
           : '<div style="width:3.6cm; height:3.8cm; margin:0 auto; background:#eee;"></div>';
-        rows += `<td style="${td}"><div style="margin-bottom:4px;">${j + 1}. ${esc(r.companyZh || '')}</div><div style="font-weight:bold;">${esc((r.nameZh || '') + (r.titleZh || ''))}</div></td>`
+        rows += `<td style="${td}"><div style="margin-bottom:4px;">${start + j + 1}. ${esc(r.companyZh || '')}</div><div style="font-weight:bold;">${esc((r.nameZh || '') + (r.titleZh || ''))}</div></td>`
           + `<td style="${td} vertical-align:middle; text-align:center;">${pic}</td>`;
       }
       rows += '</tr>';
@@ -923,7 +925,7 @@
         <table style="width:18.24cm; table-layout:fixed; border-collapse:collapse; margin:${bi ? '18px' : '0'} auto 0; font-family:'Times New Roman',${KAI};">
           <colgroup><col style="width:5.13cm"><col style="width:3.99cm"><col style="width:5.13cm"><col style="width:3.99cm"></colgroup>
           <tr><td colspan="4" style="border:1px solid #000; background:#ccc; text-align:center; font-weight:bold; font-size:12pt; padding:6px;">${b.head}</td></tr>
-          ${rowsOf(b.list)}
+          ${rowsOf(b.list, b.start)}
         </table>`).join('');
     const html = `<html><head><meta charset="utf-8"><title>${esc(title)}</title></head>
       <body style="font-family:'Times New Roman',${KAI};"><div class="WordSection1">
@@ -3412,7 +3414,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V13</span><span class="v-note">1120改</span></h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V14</span><span class="v-note">1120改</span></h1>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
         <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
