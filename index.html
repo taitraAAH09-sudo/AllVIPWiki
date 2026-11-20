@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V11</title>
+<title>長官中英一覽表 V12</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -568,7 +568,7 @@
           <div class="info__name">${esc(line2)}</div>
           ${lineupSplit ? `<div class="batch-no">${esc(lineupBatchNo(s))}</div>` : ''}
         </div>
-        ${lineupSplit ? `<div class="batch-btns">${LINEUP_BATCH_OPTS.map(o => `<button class="batch-btn ${(s.batch || 'both') === o.k ? 'batch-btn--on' : ''}" data-k="${o.k}">${o.t}</button>`).join('')}</div>` : ''}
+        ${lineupSplit ? `<div class="batch-btns">${LINEUP_BATCH_OPTS.map(o => `<button class="batch-btn ${(isPhotoOnly(s) ? 'photo' : 'both') === o.k ? 'batch-btn--on' : ''}" data-k="${o.k}">${o.t}</button>`).join('')}</div>` : ''}
         <button class="delete-btn" title="移除">✕</button>
       `;
       item.querySelectorAll('.batch-btn').forEach(b => b.addEventListener('click', () => { s.batch = b.dataset.k; renderGenSelectedList(); }));
@@ -581,23 +581,30 @@
 
   // ===== TEST：站位分兩梯次（第一梯 揭幕、第二梯 合影）=====
   let lineupSplit = false;
-  const LINEUP_BATCH_OPTS = [{ k: 'both', t: '揭幕＋合影' }, { k: 'unveil', t: '只揭幕' }, { k: 'photo', t: '只合影' }];
+  // V12：只分兩種 — 揭幕＋合影（第一梯）、第二梯合影
+  const LINEUP_BATCH_OPTS = [{ k: 'both', t: '揭幕＋合影' }, { k: 'photo', t: '第二梯合影' }];
+  const isPhotoOnly = s => s.batch === 'photo';
   function lineupBatches() {
-    if (!lineupSplit) return [{ key: 'all', label: '', list: selectedOfficers.slice() }];
+    if (!lineupSplit) return [{ key: 'all', label: '', short: '', list: selectedOfficers.slice() }];
     return [
-      { key: 'unveil', label: '第一梯　揭幕', list: selectedOfficers.filter(s => (s.batch || 'both') !== 'photo') },
-      { key: 'photo', label: '第二梯　合影', list: selectedOfficers.filter(s => (s.batch || 'both') !== 'unveil') }
+      { key: 'unveil', label: '第一梯揭幕', short: '揭幕', list: selectedOfficers.filter(s => !isPhotoOnly(s)) },
+      { key: 'photo', label: '第二梯合影', short: '第二梯合影', list: selectedOfficers.filter(isPhotoOnly) }
     ];
+  }
+  // 照片表：沒分梯＝一張「合影貴賓」；分梯＝「揭幕貴賓」＋「第二梯合影貴賓」放同一份
+  function photoBatches() {
+    if (!lineupSplit) return [{ head: '合影貴賓', list: selectedOfficers.slice() }];
+    return lineupBatches().filter(b => b.list.length).map(b => ({ head: b.key === 'unveil' ? '揭幕貴賓' : '第二梯合影貴賓', list: b.list }));
   }
   function lineupUnveilList() { return lineupSplit ? lineupBatches()[0].list : selectedOfficers.slice(); }
   function lineupBatchNo(s) {
-    return lineupBatches().map(b => { const i = b.list.indexOf(s); return i >= 0 ? b.label.replace(/^.*　/, '') + ' ' + (i + 1) + ' 號' : ''; }).filter(Boolean).join('・');
+    return lineupBatches().map(b => { const i = b.list.indexOf(s); return i >= 0 ? b.short + ' ' + (i + 1) + ' 號' : ''; }).filter(Boolean).join('・');
   }
   function paintSplitBtn() {
     const b = document.getElementById('lineup-split-btn');
     b.classList.toggle('split-btn--on', lineupSplit);
     b.textContent = lineupSplit ? '✓ 分兩梯次（揭幕／合影）' : '分兩梯次';
-    document.getElementById('lineup-sub-h').textContent = lineupSplit ? '站位順序（每位選他在哪一梯；號碼各梯分開算）' : '站位順序';
+    document.getElementById('lineup-sub-h').textContent = lineupSplit ? '站位順序（第二梯合影的人另外排；號碼各梯分開算）' : '站位順序';
   }
   document.getElementById('lineup-split-btn').addEventListener('click', () => {
     lineupSplit = !lineupSplit; paintSplitBtn(); renderGenSelectedList();
@@ -775,42 +782,51 @@
         + (mar ? `<w:tcMar><w:left w:w="${mar}" w:type="dxa"/><w:right w:w="${mar}" w:type="dxa"/></w:tcMar>` : '')
         + `<w:vAlign w:val="${vAlign}"/></w:tcPr>${inner}</w:tc>`;
 
-      // ---- 表格列 ----
-      let rows = '';
-      for (let i = 0; i < selectedOfficers.length; i += 2) {
-        rows += '<w:tr><w:trPr><w:cantSplit/></w:trPr>';
-        for (let j = i; j < i + 2; j++) {
-          if (j < selectedOfficers.length) {
-            const r = selectedOfficers[j].record;
-            const order = selectedOfficers[j].order;
-            const line1 = `${order}. ${r.companyZh || ''}`;
-            const line2 = `${r.nameZh || ''}${r.titleZh || ''}`;
-            let pic;
-            try {
-              pic = await imageRun(r.photo || DOCX_PLACEHOLDER_IMG, !r.photo);
-            } catch (e) {
-              console.warn('照片讀取失敗，改用空白框：', r.nameZh, e);
-              pic = await imageRun(DOCX_PLACEHOLDER_IMG, true);
+      // ---- 表格列（V12：分梯時一梯一張表，同一份檔）----
+      async function buildRows(list) {
+        let rows = '';
+        for (let i = 0; i < list.length; i += 2) {
+          rows += '<w:tr><w:trPr><w:cantSplit/></w:trPr>';
+          for (let j = i; j < i + 2; j++) {
+            if (j < list.length) {
+              const r = list[j].record;
+              const order = j + 1;
+              const line1 = `${order}. ${r.companyZh || ''}`;
+              const line2 = `${r.nameZh || ''}${r.titleZh || ''}`;
+              let pic;
+              try {
+                pic = await imageRun(r.photo || DOCX_PLACEHOLDER_IMG, !r.photo);
+              } catch (e) {
+                console.warn('照片讀取失敗，改用空白框：', r.nameZh, e);
+                pic = await imageRun(DOCX_PLACEHOLDER_IMG, true);
+              }
+              rows += cell(COL_TEXT, para(line1, { after: 60 }) + para(line2, { bold: true }), { vAlign: 'top' });
+              rows += cell(COL_PHOTO, `<w:p><w:pPr><w:spacing w:before="60" w:after="60"/><w:jc w:val="center"/></w:pPr>${pic}</w:p>`, { vAlign: 'center', mar: 57 });
+            } else {
+              rows += cell(COL_TEXT, '<w:p/>') + cell(COL_PHOTO, '<w:p/>');
             }
-            rows += cell(COL_TEXT, para(line1, { after: 60 }) + para(line2, { bold: true }), { vAlign: 'top' });
-            rows += cell(COL_PHOTO, `<w:p><w:pPr><w:spacing w:before="60" w:after="60"/><w:jc w:val="center"/></w:pPr>${pic}</w:p>`, { vAlign: 'center', mar: 57 });
-          } else {
-            rows += cell(COL_TEXT, '<w:p/>') + cell(COL_PHOTO, '<w:p/>');
           }
+          rows += '</w:tr>';
         }
-        rows += '</w:tr>';
+        return rows;
       }
 
       const B = (tag) => `<w:${tag} w:val="single" w:sz="4" w:space="0" w:color="000000"/>`;
-      const table = `<w:tbl><w:tblPr><w:tblW w:w="${TABLE_W}" w:type="dxa"/><w:jc w:val="center"/>`
+      const makeTable = (head, rows) => `<w:tbl><w:tblPr><w:tblW w:w="${TABLE_W}" w:type="dxa"/><w:jc w:val="center"/>`
         + `<w:tblBorders>${B('top')}${B('left')}${B('bottom')}${B('right')}${B('insideH')}${B('insideV')}</w:tblBorders>`
         + `<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="100" w:type="dxa"/><w:left w:w="140" w:type="dxa"/><w:bottom w:w="100" w:type="dxa"/><w:right w:w="140" w:type="dxa"/></w:tblCellMar>`
         + `<w:tblLook w:val="0000"/></w:tblPr>`
         + `<w:tblGrid><w:gridCol w:w="${COL_TEXT}"/><w:gridCol w:w="${COL_PHOTO}"/><w:gridCol w:w="${COL_TEXT}"/><w:gridCol w:w="${COL_PHOTO}"/></w:tblGrid>`
         + `<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr><w:tcW w:w="${TABLE_W}" w:type="dxa"/><w:gridSpan w:val="4"/>`
         + `<w:shd w:val="clear" w:color="auto" w:fill="CCCCCC"/><w:vAlign w:val="center"/></w:tcPr>`
-        + para('合影貴賓', { bold: true, size: 24, jc: 'center' }) + `</w:tc></w:tr>`
+        + para(head, { bold: true, size: 24, jc: 'center' }) + `</w:tc></w:tr>`
         + rows + `</w:tbl>`;
+      const batches = photoBatches();
+      let table = '';
+      for (let bi = 0; bi < batches.length; bi++) {
+        if (bi > 0) table += '<w:p><w:pPr><w:spacing w:before="0" w:after="240"/></w:pPr></w:p>';
+        table += makeTable(batches[bi].head, await buildRows(batches[bi].list));
+      }
 
       const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`
         + `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
@@ -886,31 +902,36 @@
     const title = genTitleInput.value.trim() || "貴賓合影照片";
     const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
     const td = 'border:1px solid #000; padding:5px 7px; vertical-align:top; font-size:11pt;';
+    const rowsOf = list => {
     let rows = '';
-    for (let i = 0; i < selectedOfficers.length; i += 2) {
+    for (let i = 0; i < list.length; i += 2) {
       rows += '<tr>';
       for (let j = i; j < i + 2; j++) {
-        const s = selectedOfficers[j];
+        const s = list[j];
         if (!s) { rows += `<td style="${td}"></td><td style="${td}"></td>`; continue; }
         const r = s.record;
         const pic = r.photo ? `<img src="${r.photo}" style="max-width:3.6cm; max-height:3.8cm; display:block; margin:0 auto;">`
           : '<div style="width:3.6cm; height:3.8cm; margin:0 auto; background:#eee;"></div>';
-        rows += `<td style="${td}"><div style="margin-bottom:4px;">${s.order}. ${esc(r.companyZh || '')}</div><div style="font-weight:bold;">${esc((r.nameZh || '') + (r.titleZh || ''))}</div></td>`
+        rows += `<td style="${td}"><div style="margin-bottom:4px;">${j + 1}. ${esc(r.companyZh || '')}</div><div style="font-weight:bold;">${esc((r.nameZh || '') + (r.titleZh || ''))}</div></td>`
           + `<td style="${td} vertical-align:middle; text-align:center;">${pic}</td>`;
       }
       rows += '</tr>';
     }
+    return rows;
+    };
+    const tables = photoBatches().map((b, bi) => `
+        <table style="width:18.24cm; table-layout:fixed; border-collapse:collapse; margin:${bi ? '18px' : '0'} auto 0; font-family:'Times New Roman',${KAI};">
+          <colgroup><col style="width:5.13cm"><col style="width:3.99cm"><col style="width:5.13cm"><col style="width:3.99cm"></colgroup>
+          <tr><td colspan="4" style="border:1px solid #000; background:#ccc; text-align:center; font-weight:bold; font-size:12pt; padding:6px;">${b.head}</td></tr>
+          ${rowsOf(b.list)}
+        </table>`).join('');
     const html = `<html><head><meta charset="utf-8"><title>${esc(title)}</title></head>
       <body style="font-family:'Times New Roman',${KAI};"><div class="WordSection1">
         <p style="text-align:center; font-size:16pt; font-weight:bold; margin:0 0 4px; font-family:${KAI};">${esc(title)}</p>
         <p style="text-align:right; font-size:10pt; color:#0000CC; margin:0 0 6px; font-family:${KAI};">${esc(getUpdateStamp())}</p>
-        <table style="width:18.24cm; table-layout:fixed; border-collapse:collapse; margin:0 auto; font-family:'Times New Roman',${KAI};">
-          <colgroup><col style="width:5.13cm"><col style="width:3.99cm"><col style="width:5.13cm"><col style="width:3.99cm"></colgroup>
-          <tr><td colspan="4" style="border:1px solid #000; background:#ccc; text-align:center; font-weight:bold; font-size:12pt; padding:6px;">合影貴賓</td></tr>
-          ${rows}
-        </table>
+        ${tables}
       </div></body></html>`;
-    previewDoc('合影貴賓照片', html, [{ label: '⬇ 下載 Word', fn: downloadPhotoDocx }]);
+    previewDoc(lineupSplit ? '照片（揭幕＋第二梯合影）' : '合影貴賓照片', html, [{ label: '⬇ 下載 Word', fn: downloadPhotoDocx }]);
   });
 
   // ---------- 檔名用的時間戳記（以電腦本機時間為準） ----------
@@ -1368,7 +1389,7 @@
 
     let listHtml = '';
     const unveilList = lineupUnveilList();
-    if (!unveilList.length) { alert('第一梯（揭幕）目前沒有人'); return; }
+    if (!unveilList.length) { alert('揭幕目前沒有人'); return; }
     unveilList.forEach((s, i) => {
       const r = s.record;
       const zh = [r.companyZh, [r.nameZh, r.titleZh].filter(Boolean).join('')].filter(Boolean).join(' ');
@@ -1436,7 +1457,7 @@
     if (!batches.length) { alert('兩梯都沒有人'); return; }
     const examTitle = genTitleInput.value.trim();
     const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
-    const head = lineupSplit ? '貴賓揭幕／合影站位圖' : '貴賓揭幕站位圖';
+    const head = lineupSplit ? '貴賓揭幕/合影站位圖' : '貴賓揭幕站位圖';
     const html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
       <head>
@@ -1488,7 +1509,7 @@
     };
     batches.forEach(b => {
       const list = b.list, n = list.length, order = computeLineupOrder(n);
-      const ws = wb.addWorksheet(b.label ? b.label.replace(/\s|　/g, '') : '站位圖');
+      const ws = wb.addWorksheet(b.label || '站位圖');
       ws.columns = Array.from({ length: n }, () => ({ width: 12 }));
       const titleRow = (row, text, size, h) => {
         ws.mergeCells(row, 1, row, n);
@@ -1500,7 +1521,7 @@
       };
       titleRow(1, examTitle, 16, 28);
       ws.mergeCells(2, 1, 2, n); ws.getRow(2).height = 10;
-      titleRow(3, b.label ? b.label.replace('　', ' ') + '位置圖' : '貴賓揭幕位置圖', 16, 28);
+      titleRow(3, b.label ? b.label + '位置圖' : '貴賓揭幕位置圖', 16, 28);
       ws.mergeCells(4, 1, 4, n);
       const tStamp = ws.getCell(4, 1);
       tStamp.value = mix(getUpdateStamp(), '標楷體', { size: 10, color: { argb: 'FF0000CC' } });
@@ -2911,7 +2932,7 @@
     }
     const byId = id => allRecords.find(r=>r.id===id);
     selectedOfficers.length=0;
-    (st.selected||[]).forEach((id,i)=>{ const r=byId(id); if(r) selectedOfficers.push({order:selectedOfficers.length+1,record:r,batch:(st.selectedBatch||[])[i]||'both'}); });
+    (st.selected||[]).forEach((id,i)=>{ const r=byId(id); if(r) selectedOfficers.push({order:selectedOfficers.length+1,record:r,batch:((st.selectedBatch||[])[i]==='photo'?'photo':'both')}); });
     lineupSplit = !!st.lineupSplit; paintSplitBtn();
     scheduleOfficers.length=0;
     (st.schedule||[]).forEach((it,i)=>{ const r=byId(it.id); if(r) scheduleOfficers.push({order:i+1,record:r,speechType:it.t||null}); });
@@ -3391,7 +3412,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V11</span><span class="v-note">1120改</span></h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V12</span><span class="v-note">1120改</span></h1>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
         <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
