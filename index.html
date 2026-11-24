@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>長官中英一覽表 V15</title>
+<title>長官中英一覽表 V21</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -1591,7 +1591,8 @@
     ['MEDICAL TAIWAN', '台灣國際醫療暨健康照護展'], ['TCFB', '臺中國際茶、咖啡暨烘焙展'], ['Hobby & Fun Festival', '嗜100'],
     ['TADTE', '台北國際航太暨國防工業展'], ['Taiwan Innotech Expo (TIE)', '台灣創新技術博覽會'], ['TAITRONICS', '台北國際電子產業科技展'],
     ['AIoT Taiwan', '台灣國際人工智慧暨物聯網展'], ['Energy Taiwan', '台灣國際智慧能源週'], ['Net-Zero Taiwan', '台灣國際淨零永續展'],
-    ['TIWW', '台灣國際水週'], ['KAOHSIUNG FOOD SHOW', '高雄國際食品展'], ['KAOHSIUNG HORECA', '高雄國際飯店、餐飲暨烘焙設備用品展']
+    ['TIWW', '台灣國際水週'], ['KAOHSIUNG FOOD SHOW', '高雄國際食品展'], ['KAOHSIUNG HORECA', '高雄國際飯店、餐飲暨烘焙設備用品展'],
+    ['TaipeiPLAS', '台北國際塑橡膠工業展']
   ];
   // 常見簡稱（長的全名先比；簡稱只在全名沒對到時才用）
   const SHOW_ALIAS = [
@@ -1601,16 +1602,37 @@
     ['MEDICAL TAIWAN', '醫療暨健康照護展'], ['MEDICAL TAIWAN', '醫療展'], ['TCFB', '茶咖啡暨烘焙展'], ['TADTE', '航太暨國防工業展'], ['TADTE', '航太展'],
     ['Taiwan Innotech Expo (TIE)', '創新技術博覽會'], ['TAITRONICS', '電子產業科技展'], ['TAITRONICS', '電子展'], ['AIoT Taiwan', '物聯網展'],
     ['Energy Taiwan', '智慧能源週'], ['Net-Zero Taiwan', '淨零永續展'], ['TIWW', '水週'],
-    ['KAOHSIUNG FOOD SHOW', '高雄食品展'], ['KAOHSIUNG HORECA', '高雄餐飲設備用品展'], ['FOOD TAIPEI', '食品展']
+    ['KAOHSIUNG FOOD SHOW', '高雄食品展'], ['KAOHSIUNG HORECA', '高雄餐飲設備用品展'], ['FOOD TAIPEI', '食品展'], ['TAIPEI CYCLE', '腳踏車展'], ['TaipeiPLAS', '塑橡膠展'], ['TaipeiPLAS', '塑膠展']
   ];
-  const SHOW_EN_ALIAS = [['COMPUTEX TAIPEI', 'COMPUTEX'], ['TAIPEI CYCLE', 'CYCLE'], ['Taiwan Innotech Expo (TIE)', 'TIE']];
+  // V19：兩個字就認得的關鍵字（長的先比，所以「智慧移動」不會被「智慧」吃掉）
+  const SHOW_KEYWORDS = [
+    ['TIMTOS', '工具機'], ['TAIPEI CYCLE', '自行車'], ['TAIPEI CYCLE', '腳踏車'], ['TAIPEI CYCLE', '單車'],
+    ['TAIPEI AMPA', '汽機車'], ['TAIPEI AMPA', '零配件'], ['E-Mobility Taiwan', '智慧移動'], ['E-Mobility Taiwan', '移動'],
+    ['DG Taiwan', '禮品'], ['DG Taiwan', '文具'], ['TaiSPO', '運動'], ['TaiSPO', '健身'], ['COMPUTEX TAIPEI', '電腦'],
+    ['FOOD TAIPEI', '食品'], ['FOODTECH TAIPEI', '食品加工'], ['FOODTECH TAIPEI', '食品機械'],
+    ['BIO/PHARMATECH TAIWAN', '生技'], ['BIO/PHARMATECH TAIWAN', '製藥'], ['TAIPEI PACK', '包裝'],
+    ['TAIWAN HORECA', '飯店'], ['TAIWAN HORECA', '餐飲'], ['MEDICAL TAIWAN', '醫療'], ['MEDICAL TAIWAN', '健康照護'],
+    ['TCFB', '茶'], ['TCFB', '咖啡'], ['TCFB', '烘焙'], ['TADTE', '航太'], ['TADTE', '國防'],
+    ['Taiwan Innotech Expo (TIE)', '創新技術'], ['TAITRONICS', '電子'], ['AIoT Taiwan', '物聯網'], ['AIoT Taiwan', '人工智慧'],
+    ['Energy Taiwan', '能源'], ['Energy Taiwan', '智慧'], ['Net-Zero Taiwan', '淨零'], ['Net-Zero Taiwan', '永續'],
+    ['TIWW', '水週'], ['KAOHSIUNG FOOD SHOW', '高雄食品'], ['KAOHSIUNG HORECA', '高雄餐飲'], ['KAOHSIUNG HORECA', '高雄飯店'],
+    ['TaipeiPLAS', '塑膠'], ['TaipeiPLAS', '塑橡膠'], ['TaipeiPLAS', '橡膠']
+  ];
+  const SHOW_EN_ALIAS = [['COMPUTEX TAIPEI', 'COMPUTEX'], ['TAIPEI CYCLE', 'CYCLE'], ['Taiwan Innotech Expo (TIE)', 'TIE'], ['TaipeiPLAS', 'Taipei PLAS'], ['TaipeiPLAS', 'PLAS']];
   const showNorm = t => String(t || '').replace(/臺/g, '台').replace(/展覽會/g, '展').replace(/[、，,\s]/g, '');
   function showEnFrom(zh) {
     let t = showNorm(zh);
     const year = (String(zh || '').match(/(19|20)\d{2}/) || [''])[0];
     const hits = [];
     // 長的先比，避免「台北國際食品展」吃掉「台北國際食品加工機械展」這類情況
-    SHOW_EN.concat(SHOW_ALIAS).map(([en, z]) => [en, showNorm(z)]).sort((a, b) => b[1].length - a[1].length).forEach(([en, z]) => {
+    const keys = [];
+    SHOW_EN.concat(SHOW_ALIAS).forEach(([en, z]) => {
+      const k = showNorm(z); keys.push([en, k]);
+      const core = k.replace(/(展|週|博覽會)$/, '');   // V18：打「自行車」「台北國際工具機」不用打到「展」
+      if (core !== k && core.length >= 2) keys.push([en, core]);
+    });
+    SHOW_KEYWORDS.forEach(([en, z]) => keys.push([en, showNorm(z)]));
+    keys.sort((a, b) => b[1].length - a[1].length).forEach(([en, z]) => {
       const i = t.indexOf(z);
       if (i >= 0) { if (!hits.some(h => h[1] === en)) hits.push([i, en]); t = t.slice(0, i) + '＿'.repeat(z.length) + t.slice(i + z.length); }
     });
@@ -1675,6 +1697,12 @@
     if (!venueEnInput.value.trim()) { venueEnDirty = false; }
   });
   venueEnInput.addEventListener('blur', syncVenueEn);   // 清空後離開 → 再自動帶
+
+  // V18：年份只收數字、最多 4 碼
+  document.getElementById('sch-year').addEventListener('input', e => {
+    const v = e.target.value.replace(/\D/g, '').slice(0, 4);
+    if (v !== e.target.value) e.target.value = v;
+  });
 
   // ================= 程序表順序貴賓 =================
   const scheduleListEl = document.getElementById('schedule-selected-list');
@@ -1768,9 +1796,9 @@
       return;
     }
     const title = genTitleInput.value.trim() || "展覽名稱";
-    const tentative = document.getElementById('schedule-tentative-chk').checked;
+    const tentative = false;   // V20：拿掉(暫定)
     const titleEn = (titleEnInput.value.trim() || showEnFrom(genTitleInput.value)).trim();
-    const bilingual = document.getElementById('schedule-bilingual-chk').checked;
+    const bilingual = document.getElementById('schedule-bilingual-chk').checked;   // V21：取消勾＝純中文，版型同中英版
     const KAI = "'DFKai-SB','標楷體','BiauKai',serif";
 
     // ---- 時間欄位 ----
@@ -1788,12 +1816,7 @@
       const type = s.speechType || '貴賓致詞';
       const person = `${r.companyZh || ''} ${r.nameZh || ''}${r.titleZh || ''}`.trim();
       const enParts = [r.nameEn, r.titleEn, r.companyEn].filter(Boolean).join(', ');
-      if (bilingual) {
-        items.push({ label: `【${type}】`, sub: person, en: enParts ? `Remarks by ${enParts}` : '', dur: 5 });
-      } else {
-        const sub = (type === '貴賓致詞') ? `${person}致詞` : person;
-        items.push({ label: type, sub, en: '', dur: 5 });
-      }
+      items.push({ label: `【${type}】`, sub: person, en: enParts ? `Remarks by ${enParts}` : '', dur: 5 });
     });
     items.push({ label: '揭幕儀式/貴賓合影', sub: '', en: 'Group Photo', dur: 5 });
     items.push({ label: '貴賓參觀展覽', sub: '', en: 'Guided Tour of the Showground', dur: 30 });
@@ -1868,12 +1891,12 @@
     // ---- 表格 ----
     let rowsHtml = '';
     items.forEach(it => {
-      const subHtml = it.sub ? `<div style="margin-top:4px;${bilingual ? '' : ' margin-left:2em;'}">${esc(it.sub)}</div>` : '';
+      const subHtml = it.sub ? `<div style="margin-top:4px;">${esc(it.sub)}</div>` : '';
       const enHtml = (bilingual && it.en) ? `<div style="margin-top:4px; font-family:'Times New Roman',${KAI}; font-size:14pt;">${esc(it.en)}</div>` : '';
       rowsHtml += `
         <tr>
           <td style="border:1px solid #000; padding:8px 6px; width:3.2cm; text-align:center; vertical-align:middle; font-size:14pt; font-family:${KAI};">${esc(it.time)}</td>
-          <td style="border:1px solid #000; padding:8px 12px; width:13.5cm; vertical-align:middle; font-size:${bilingual ? '16pt' : '18pt'}; font-family:${KAI};">
+          <td style="border:1px solid #000; padding:8px 12px; width:13.5cm; vertical-align:middle; font-size:16pt; font-family:${KAI};">
             <div>${esc(it.label)}</div>${subHtml}${enHtml}
           </td>
         </tr>`;
@@ -1881,7 +1904,7 @@
 
     const thirdTitle = bilingual ? `程序表/ Agenda${tentative ? '(暫定)' : ''}` : `程序表${tentative ? '(暫定)' : ''}`;
     const headTime = bilingual ? '時間/Time' : '時間';
-    const headContent = bilingual ? '程序/ Agenda' : '內容';
+    const headContent = bilingual ? '程序/ Agenda' : '程序';
 
     const html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
@@ -2958,7 +2981,7 @@
       setV('schedule-venue-en',st.sch.extraEn);
       venueEnDirty = !!(st.sch.extraEn && st.sch.extraEn !== venueEnAuto());
       syncVenueEn();
-      setC('schedule-tentative-chk',st.sch.tentative); setC('schedule-bilingual-chk',st.sch.bilingual);
+      setC('schedule-tentative-chk',st.sch.tentative); setC('schedule-bilingual-chk',st.sch.bilingual !== false);
     }
     const byId = id => allRecords.find(r=>r.id===id);
     selectedOfficers.length=0;
@@ -3055,21 +3078,6 @@
       });
     });
   }
-
-  document.getElementById('ws-wipe-btn').addEventListener('click', async ()=>{
-    const used=Array.from({length:WS_N},(_,k)=>k+1).filter(i=>(WS_META['slot'+i]||{}).hasData);
-    if(!used.length){ alert('目前五格都是空的，沒有東西需要清除。'); return; }
-    const listTxt=used.map(i=>`檔${i}：${(WS_META['slot'+i]||{}).name||'(未命名)'}`).join('\n');
-    if(!confirm(`【確認 1/3】洗白全部？將刪除以下存檔：\n${listTxt}`)) return;
-    if(!confirm('【確認 2/3】此動作無法復原，所有同事的存檔都會一起消失。\n仍要繼續嗎？')) return;
-    const typed=prompt('【確認 3/3】請輸入「洗白全部」四個字以完成刪除：');
-    if(typed===null) return;
-    if(typed.trim()!=='洗白全部'){ alert('輸入不符，已取消刪除。'); return; }
-    try{
-      for(let i=1;i<=WS_N;i++) await deleteDoc(doc(db,'genWorkspaces','slot'+i));
-      alert('✅ 已全部清空');
-    }catch(e){ alert('清除失敗：'+e.message); }
-  });
 
   // 即時同步：別人存檔/改名，所有開著的頁面立刻看到
   onSnapshot(collection(db,'genWorkspaces'), snap=>{
@@ -3373,8 +3381,8 @@
   #generator-view .info__name { font-size:14px; }
   #generator-view .gen-num-badge { width:26px; height:26px; font-size:12px; }
   #generator-view .empty-state { padding:18px !important; }
-  .tool-links { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
-  .tool-links a { display:flex; flex-direction:column; gap:3px; padding:11px 14px; border:1px solid var(--paper-line); border-radius:8px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:13.5px; text-decoration:none; }
+  .tool-links { display:flex; flex-wrap:wrap; gap:8px; }
+  .tool-links a { display:inline-flex; flex-direction:column; gap:2px; padding:8px 12px; border:1px solid var(--paper-line); border-radius:8px; background:#fbf8f1; color:var(--navy); font-weight:700; font-size:13.5px; text-decoration:none; }
   .tool-links a:hover { border-color:var(--gold); }
   .tool-links a small { font-weight:400; font-size:11.5px; color:var(--ink-soft); }
   .split-btn { margin-left:auto; font-family:inherit; font-size:13px; font-weight:800; padding:7px 14px; border:1.5px solid var(--paper-line); border-radius:999px; background:#fff; color:var(--ink-soft); cursor:pointer; }
@@ -3491,7 +3499,7 @@
     <div class="header">
       <div>
         <a href="https://taitraaah09-sudo.github.io/AllVIPWiki/2870.html" target="_blank" rel="noopener" class="btn" style="text-decoration:none; font-size:13px; display:inline-flex; margin-bottom:8px;">📜 提詞機</a>
-        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V15</span><span class="v-note">1120改</span></h1>
+        <h1>長官中英一覽表<span style="font-size:15px; font-weight:700; color:var(--gold); margin-left:8px; letter-spacing:0.05em; vertical-align:middle;">V21</span><span class="v-note">1124改</span></h1>
       </div>
       <div style="display:flex; flex-direction:column; align-items:flex-end; gap:10px;">
         <button id="gen-entry-btn" class="btn btn--primary" style="font-size:15px; font-weight:700; padding:12px 28px; box-shadow:0 2px 10px rgba(28,43,58,0.25);">📋 活動組專用</button>
@@ -3561,8 +3569,7 @@
           <span class="desc" style="margin:0;">把目前整頁的選擇（展名、程序表、唱名、接待計畫）存進 Firebase；之後開頁按「讀」即可接續。人名欄標示這格現在誰在用。</span>
         </div>
         <div id="ws-slots"></div>
-        <div id="ws-summary" class="desc" style="margin:8px 0 10px;"></div>
-        <button id="ws-wipe-btn" class="btn" style="width:100%; color:var(--warn); border-color:var(--warn); font-weight:800;">🧹 洗白全部</button>
+        <div id="ws-summary" class="desc" style="margin:8px 0 0;"></div>
       </div>
 
       <div class="card">
@@ -3571,7 +3578,6 @@
         <div class="venue-en-row">
           <span>英文展名：</span>
           <input id="gen-title-en" type="text" placeholder="打中文展名會自動帶，例如 TIWW 2026">
-          <small>認得 TIMTOS、COMPUTEX、TIWW…等 26 個展；兩展同期會用 &amp; 連起來、年份放最後。要改直接改，清空就會再自動帶。中英版程序表會用到</small>
         </div>
       </div>
 
@@ -3589,14 +3595,13 @@
       <div class="card">
         <div class="step-h"><span class="step-n">2</span><h2>程序表</h2><small>拖曳 ⠿ 調整致詞順序</small>
           <span class="step-opts">
-            <label class="opt"><input type="checkbox" id="schedule-tentative-chk"> (暫定)</label>
-            <label class="opt"><input type="checkbox" id="schedule-bilingual-chk"> 中英版</label>
+            <label class="opt"><input type="checkbox" id="schedule-bilingual-chk" checked> 中英版</label>
           </span>
         </div>
         <div id="schedule-selected-list"></div>
         <div style="margin-top:18px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; font-size:14px;">
           <span style="font-size:13.5px; font-weight:700; color:var(--navy-light); flex-shrink:0;">時間：</span>
-          <input id="sch-year" type="text" inputmode="numeric" placeholder="YYYY" style="width:72px; font-family:inherit; font-size:14px; padding:10px 8px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--ink); outline:none; text-align:center;">
+          <input id="sch-year" type="text" inputmode="numeric" maxlength="4" placeholder="YYYY" style="width:72px; font-family:inherit; font-size:14px; padding:10px 8px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--ink); outline:none; text-align:center;">
           <span>年</span>
           <input id="sch-month" type="text" inputmode="numeric" placeholder="MM" style="width:52px; font-family:inherit; font-size:14px; padding:10px 8px; border:1px solid var(--paper-line); border-radius:5px; background:var(--paper); color:var(--ink); outline:none; text-align:center;">
           <span>月</span>
@@ -3681,7 +3686,6 @@
         <div class="step-h"><h2>相關工具</h2></div>
         <div class="tool-links">
           <a href="https://taitraaah09-sudo.github.io/VIP-Photo/" target="_blank" rel="noopener">🔗 貴賓開幕站位產生器<small>當你會一直改時打開它</small></a>
-          <a href="https://taitraaah09-sudo.github.io/security/" target="_blank" rel="noopener">🛡️ 維安簡報<small>使用前請先讀檔，會自動連動</small></a>
         </div>
       </div>
 
